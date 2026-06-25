@@ -242,7 +242,8 @@ Mesh Mesh::Disk(float radius, int segments) {
     return mesh;
 }
 
-Mesh Mesh::Ring(float inner_r, float outer_r, float thickness, int segments) {
+Mesh Mesh::Ring(float inner_r, float outer_r, float thickness, int segments,
+                float uv_repeat) {
     assert(inner_r >= 0.0f);
     assert(outer_r > inner_r);
     assert(thickness > 0.0f);
@@ -256,9 +257,11 @@ Mesh Mesh::Ring(float inner_r, float outer_r, float thickness, int segments) {
     for (int i = 0; i < segments; ++i) {
         const float a0 = da * static_cast<float>(i);
         const float a1 = da * static_cast<float>(i + 1);
-        const float u0 = static_cast<float>(i) / static_cast<float>(segments);
-        const float u1 =
-            static_cast<float>(i + 1) / static_cast<float>(segments);
+        // U follows the angle (optionally tiled); V runs inner(0)→outer(1).
+        const float u0 =
+            static_cast<float>(i) / static_cast<float>(segments) * uv_repeat;
+        const float u1 = static_cast<float>(i + 1) /
+                         static_cast<float>(segments) * uv_repeat;
 
         // Top annulus (+Y): winding inner(a0),inner(a1),outer(a1),outer(a0)
         {
@@ -270,10 +273,10 @@ Mesh Mesh::Ring(float inner_r, float outer_r, float thickness, int segments) {
                               outer_r * std::sin(a0)};
             const Vec3 oo1 = {outer_r * std::cos(a1), thickness,
                               outer_r * std::sin(a1)};
-            mesh.vertices_.push_back({ii0, top_n, {u0 * 0.5f, 0.0f}});
-            mesh.vertices_.push_back({ii1, top_n, {u1 * 0.5f, 0.0f}});
+            mesh.vertices_.push_back({ii0, top_n, {u0, 0.0f}});
+            mesh.vertices_.push_back({ii1, top_n, {u1, 0.0f}});
             mesh.vertices_.push_back({oo1, top_n, {u1, 1.0f}});
-            mesh.vertices_.push_back({ii0, top_n, {u0 * 0.5f, 0.0f}});
+            mesh.vertices_.push_back({ii0, top_n, {u0, 0.0f}});
             mesh.vertices_.push_back({oo1, top_n, {u1, 1.0f}});
             mesh.vertices_.push_back({oo0, top_n, {u0, 1.0f}});
         }
@@ -288,12 +291,12 @@ Mesh Mesh::Ring(float inner_r, float outer_r, float thickness, int segments) {
                               outer_r * std::sin(a0)};
             const Vec3 oo1 = {outer_r * std::cos(a1), 0.0f,
                               outer_r * std::sin(a1)};
-            mesh.vertices_.push_back({ii0, bot_n, {u0 * 0.5f, 0.0f}});
+            mesh.vertices_.push_back({ii0, bot_n, {u0, 0.0f}});
             mesh.vertices_.push_back({oo0, bot_n, {u0, 1.0f}});
             mesh.vertices_.push_back({oo1, bot_n, {u1, 1.0f}});
-            mesh.vertices_.push_back({ii0, bot_n, {u0 * 0.5f, 0.0f}});
+            mesh.vertices_.push_back({ii0, bot_n, {u0, 0.0f}});
             mesh.vertices_.push_back({oo1, bot_n, {u1, 1.0f}});
-            mesh.vertices_.push_back({ii1, bot_n, {u1 * 0.5f, 0.0f}});
+            mesh.vertices_.push_back({ii1, bot_n, {u1, 0.0f}});
         }
 
         // Outer side wall (outward normal)

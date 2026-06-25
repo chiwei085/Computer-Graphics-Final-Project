@@ -53,9 +53,25 @@ Material Material::EmissiveCyan() {
 }
 
 Material Material::EmissiveGreen() {
-    Material mat({0.04f, 0.15f, 0.05f, 1.0f}, {0.08f, 0.35f, 0.12f, 1.0f},
-                 {0.30f, 0.70f, 0.40f, 1.0f}, 32.0f);
-    mat.SetEmission({0.05f, 0.35f, 0.10f, 1.0f});
+    // Brighter diffuse so the modulated circuit texture stays legible, but a
+    // gentler emission so the dark traces are not flooded by self-illumination.
+    Material mat({0.05f, 0.16f, 0.07f, 1.0f}, {0.30f, 0.75f, 0.38f, 1.0f},
+                 {0.25f, 0.55f, 0.32f, 1.0f}, 24.0f);
+    mat.SetEmission({0.03f, 0.16f, 0.06f, 1.0f});
+    return mat;
+}
+
+Material Material::GlowCyan(float intensity) {
+    Material mat({0.0f, 0.0f, 0.0f, 1.0f}, {0.35f, 0.85f, 1.0f, intensity},
+                 {0.0f, 0.0f, 0.0f, 1.0f}, 0.0f);
+    mat.SetEmission({0.35f, 0.85f, 1.0f, 1.0f});
+    return mat;
+}
+
+Material Material::GlowGreen(float intensity) {
+    Material mat({0.0f, 0.0f, 0.0f, 1.0f}, {0.30f, 1.0f, 0.45f, intensity},
+                 {0.0f, 0.0f, 0.0f, 1.0f}, 0.0f);
+    mat.SetEmission({0.30f, 1.0f, 0.45f, 1.0f});
     return mat;
 }
 

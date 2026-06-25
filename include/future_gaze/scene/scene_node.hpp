@@ -60,6 +60,12 @@ public:
         renderable.emplace(Renderable{std::move(m), std::move(mat), tex});
         return *this;
     }
+    // Unlit additive halo (fake emissive glow, no shader). See Renderable.
+    SceneNode& draw_glow(Mesh m, Material mat) {
+        renderable.emplace(
+            Renderable{std::move(m), std::move(mat), nullptr, true});
+        return *this;
+    }
 
     // Pushes transform, draws renderable (if any), recurses children, pops
     void Draw() const;

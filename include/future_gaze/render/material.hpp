@@ -33,6 +33,11 @@ public:
     static Material EmissiveCyan();
     static Material EmissiveGreen();
 
+    // Additive-glow tints. The alpha channel sets the halo intensity since the
+    // additive pass multiplies the colour by GL_SRC_ALPHA before adding.
+    static Material GlowCyan(float intensity = 0.55f);
+    static Material GlowGreen(float intensity = 0.45f);
+
 private:
     Color ambient_{0.12f, 0.16f, 0.18f, 1.0f};
     Color diffuse_{0.74f, 0.82f, 0.86f, 1.0f};
