@@ -6,6 +6,7 @@
 
 #include "future_gaze/camera/orbit_camera.hpp"
 #include "future_gaze/render/texture.hpp"
+#include "future_gaze/scene/scene_animation.hpp"
 #include "future_gaze/scene/scene_node.hpp"
 
 namespace future_gaze
@@ -41,6 +42,7 @@ private:
     OrbitCamera camera_;
     std::map<std::string, Texture> textures_;
     std::unique_ptr<SceneNode> scene_root_;
+    SceneAnimation animation_;
 };
 
 }  // namespace future_gaze

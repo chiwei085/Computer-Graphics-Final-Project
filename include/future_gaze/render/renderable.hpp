@@ -14,7 +14,7 @@ namespace future_gaze
 // texture is non-owning; nullptr means no texture (GL_TEXTURE_2D disabled).
 // additive: when true the mesh is drawn as an unlit, depth-read-only halo
 // blended with GL_SRC_ALPHA/GL_ONE (additive) — used for fake emissive glow
-// on the Prediction Core without any shader (P3.3).
+// on the Prediction Core without any shader.
 struct Renderable
 {
     Mesh mesh;

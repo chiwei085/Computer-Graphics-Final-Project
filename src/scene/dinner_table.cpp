@@ -3,6 +3,7 @@
 #include "future_gaze/render/material.hpp"
 #include "future_gaze/render/mesh.hpp"
 #include "future_gaze/scene/builders.hpp"
+#include "future_gaze/scene/node_names.hpp"
 
 namespace future_gaze::builders
 {
@@ -12,7 +13,8 @@ namespace
 
 void BuildChair(SceneNode& root, Vec3 base, float yaw_deg,
                 const Material& upholstery, const Material& leg_mat,
-                const Texture* cloth_tex, const Texture* metal_tex) {
+                const Texture* cloth_tex, const Texture* metal_tex,
+                bool memory_panel = false) {
     auto& chair = root.NewChild("chair").at(base).rot_y(yaw_deg);
     chair.NewChild("seat")
         .at({0.0f, 0.45f, 0.0f})
@@ -29,6 +31,39 @@ void BuildChair(SceneNode& root, Vec3 base, float yaw_deg,
         chair.NewChild("leg").at(p).draw_as(Mesh::Cylinder(0.020f, 0.44f),
                                             leg_mat, metal_tex);
     }
+
+    // Anamorphic memory panel: a holographic slab that unfolds from the empty
+    // seat toward the absent diner. Built closed (scale.y = 0) above the seat;
+    // the SceneAnimation channel keyframes it open and breathes it. Drawn as an
+    // additive glow so it reads as a projected "private front", not a solid
+    // object.
+    if (memory_panel) {
+        chair.NewChild(names::kMemoryPanel)
+            .at({0.0f, 0.55f, 0.07f})
+            .scaled({0.20f, 0.0f, 0.010f})
+            .draw_glow(Mesh::Cube(), Material::GlowGreen(0.62f));
+    }
+}
+
+// A vertical stack of holographic "future-state" slices rising out of a wine
+// glass. Built collapsed at the rim; the SceneAnimation fans them open with
+// staggered phase so the lowest (most probable future) slice is the thickest
+// and the column appears to bloom.
+void BuildFutureStack(SceneNode& glass) {
+    constexpr int kSlices = 5;
+    auto& stack = glass.NewChild("future_stack").at({0.0f, 0.30f, 0.0f});
+    for (int i = 0; i < kSlices; ++i) {
+        // Lower slices are wider/brighter (higher probability); upper slices
+        // thin out into speculative futures. Slabs (not disks) so the glow
+        // reads as a solid bar from any orbit angle.
+        const float f = static_cast<float>(i) / static_cast<float>(kSlices - 1);
+        const float half = 0.100f - 0.052f * f;
+        const float intensity = 0.85f - 0.45f * f;
+        stack.NewChild(names::kFutureSlice)
+            .at({0.0f, 0.0f, 0.0f})
+            .scaled({half, 0.012f, half})
+            .draw_glow(Mesh::Cube(), Material::GlowCyan(intensity));
+    }
 }
 
 void BuildPlaceSetting(SceneNode& root, float x, float z,
@@ -42,6 +77,7 @@ void BuildPlaceSetting(SceneNode& root, float x, float z,
     glass.NewChild("bowl")
         .at({0.0f, 0.18f, 0.0f})
         .draw_as(Mesh::Frustum(0.02f, 0.075f, 0.10f), glass_mat);
+    BuildFutureStack(glass);
 }
 
 }  // namespace
@@ -76,18 +112,24 @@ std::unique_ptr<SceneNode> BuildDinnerTable(const TextureSet& tex) {
 
     // ── CHAIRS
     // ────────────────────────────────────────────────────────────────
-    BuildChair(*root, {-1.20f, 0.0f, -1.38f}, -5.0f,   cloth, metal, tex.cloth, tex.metal);
-    BuildChair(*root, {0.00f, 0.0f, -1.50f},   0.0f,   cloth, metal, tex.cloth, tex.metal);
-    BuildChair(*root, {1.20f, 0.0f, -1.35f},   7.0f,   cloth, metal, tex.cloth, tex.metal);
-    BuildChair(*root, {-1.20f, 0.0f, 1.35f},  185.0f,  cloth, metal, tex.cloth, tex.metal);
-    BuildChair(*root, {0.00f, 0.0f, 1.22f},   180.0f,  cloth, metal, tex.cloth, tex.metal);
-    BuildChair(*root, {1.20f, 0.0f, 1.38f},   174.0f,  cloth, metal, tex.cloth, tex.metal);
+    BuildChair(*root, {-1.20f, 0.0f, -1.38f}, -5.0f, cloth, metal, tex.cloth,
+               tex.metal);
+    BuildChair(*root, {0.00f, 0.0f, -1.50f}, 0.0f, cloth, metal, tex.cloth,
+               tex.metal);
+    BuildChair(*root, {1.20f, 0.0f, -1.35f}, 7.0f, cloth, metal, tex.cloth,
+               tex.metal);
+    BuildChair(*root, {-1.20f, 0.0f, 1.35f}, 185.0f, cloth, metal, tex.cloth,
+               tex.metal, true);
+    BuildChair(*root, {0.00f, 0.0f, 1.22f}, 180.0f, cloth, metal, tex.cloth,
+               tex.metal, true);
+    BuildChair(*root, {1.20f, 0.0f, 1.38f}, 174.0f, cloth, metal, tex.cloth,
+               tex.metal, true);
 
     // ── PLACE SETTINGS
     // ────────────────────────────────────────────────────────
     BuildPlaceSetting(*root, -1.20f, 0.0f, porcelain, glass_mat, tex.marble);
-    BuildPlaceSetting(*root, 0.00f, 0.0f,  porcelain, glass_mat, tex.marble);
-    BuildPlaceSetting(*root, 1.20f, 0.0f,  porcelain, glass_mat, tex.marble);
+    BuildPlaceSetting(*root, 0.00f, 0.0f, porcelain, glass_mat, tex.marble);
+    BuildPlaceSetting(*root, 1.20f, 0.0f, porcelain, glass_mat, tex.marble);
 
     // ── CAKE
     // ──────────────────────────────────────────────────────────────────
@@ -140,11 +182,11 @@ std::unique_ptr<SceneNode> BuildDinnerTable(const TextureSet& tex) {
         .at({-0.08f, 0.800f, 0.12f})
         .rot_y(14.0f)
         .scaled({0.092f, 0.0015f, 0.125f})
-        .draw_as(Mesh::Cube(),
-                 Material({0.16f, 0.15f, 0.12f, 1.0f},
-                           {0.92f, 0.90f, 0.82f, 1.0f},
-                           {0.08f, 0.08f, 0.06f, 1.0f}, 4.0f),
-                 tex.paper);
+        .draw_as(
+            Mesh::Cube(),
+            Material({0.16f, 0.15f, 0.12f, 1.0f}, {0.92f, 0.90f, 0.82f, 1.0f},
+                     {0.08f, 0.08f, 0.06f, 1.0f}, 4.0f),
+            tex.paper);
 
     return root;
 }

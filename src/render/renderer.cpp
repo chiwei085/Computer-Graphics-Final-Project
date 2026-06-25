@@ -42,20 +42,20 @@ void Renderer::Initialize() {
 
     // Load textures — fall back to debug checkerboard if file is missing
     const std::filesystem::path tex_dir = "assets/textures";
-    LoadTexOrCheckerboard(textures_["wood"],    tex_dir / "wood.png");
-    LoadTexOrCheckerboard(textures_["cloth"],   tex_dir / "cloth.png");
+    LoadTexOrCheckerboard(textures_["wood"], tex_dir / "wood.png");
+    LoadTexOrCheckerboard(textures_["cloth"], tex_dir / "cloth.png");
     LoadTexOrCheckerboard(textures_["circuit"], tex_dir / "circuit.png");
-    LoadTexOrCheckerboard(textures_["marble"],  tex_dir / "marble.png");
-    LoadTexOrCheckerboard(textures_["metal"],   tex_dir / "metal.png");
-    LoadTexOrCheckerboard(textures_["paper"],   tex_dir / "paper.png");
+    LoadTexOrCheckerboard(textures_["marble"], tex_dir / "marble.png");
+    LoadTexOrCheckerboard(textures_["metal"], tex_dir / "metal.png");
+    LoadTexOrCheckerboard(textures_["paper"], tex_dir / "paper.png");
 
     builders::TextureSet tex_set{
-        .wood    = GetTexture("wood"),
-        .cloth   = GetTexture("cloth"),
+        .wood = GetTexture("wood"),
+        .cloth = GetTexture("cloth"),
         .circuit = GetTexture("circuit"),
-        .marble  = GetTexture("marble"),
-        .metal   = GetTexture("metal"),
-        .paper   = GetTexture("paper"),
+        .marble = GetTexture("marble"),
+        .metal = GetTexture("metal"),
+        .paper = GetTexture("paper"),
     };
 
     const std::filesystem::path obj_dir = "assets/obj";
@@ -69,6 +69,8 @@ void Renderer::Initialize() {
     scene_root_->AddChild(builders::BuildAiCharacters(
         std::move(robonaut), std::move(ingenuity), tex_set));
 
+    animation_.Bind(*scene_root_);
+
     ApplyProjection();
 }
 
@@ -81,6 +83,7 @@ void Renderer::Resize(int width, int height) {
 
 void Renderer::Update(float delta_seconds) {
     elapsed_seconds_ += delta_seconds;
+    animation_.Update(delta_seconds);
 }
 
 void Renderer::Render() {

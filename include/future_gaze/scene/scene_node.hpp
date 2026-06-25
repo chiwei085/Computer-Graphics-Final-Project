@@ -70,6 +70,15 @@ public:
     // Pushes transform, draws renderable (if any), recurses children, pops
     void Draw() const;
 
+    [[nodiscard]] const std::string& name() const noexcept { return name_; }
+
+    // First descendant (DFS, self included) whose name equals `name`, or null.
+    [[nodiscard]] SceneNode* Find(const std::string& name);
+
+    // Appends every descendant (DFS, self included) whose name starts with
+    // `prefix` to `out`. Used to gather animation targets in scene order.
+    void Collect(const std::string& prefix, std::vector<SceneNode*>& out);
+
 private:
     std::string name_;
     std::vector<std::unique_ptr<SceneNode>> children_;

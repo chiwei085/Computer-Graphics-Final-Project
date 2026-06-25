@@ -12,23 +12,23 @@ namespace future_gaze::builders
 
 struct TextureSet
 {
-    const Texture* wood    = nullptr;
-    const Texture* cloth   = nullptr;
+    const Texture* wood = nullptr;
+    const Texture* cloth = nullptr;
     const Texture* circuit = nullptr;
-    const Texture* marble  = nullptr;
-    const Texture* metal   = nullptr;
-    const Texture* paper   = nullptr;
+    const Texture* marble = nullptr;
+    const Texture* metal = nullptr;
+    const Texture* paper = nullptr;
 };
 
-// 2.2 — dinner table with chairs, place settings, cake, flowers, letter
+// Dinner table with chairs, place settings, cake, flowers, letter.
 [[nodiscard]] std::unique_ptr<SceneNode> BuildDinnerTable(
     const TextureSet& tex);
 
-// 2.3 — layered Prediction Core AI eye
+// Layered Prediction Core AI eye.
 [[nodiscard]] std::unique_ptr<SceneNode> BuildPredictionCore(
     const TextureSet& tex);
 
-// 2.4 — Robonaut (table side) + Ingenuity (orbit start position)
+// Robonaut (table side) + Ingenuity (orbit start position).
 [[nodiscard]] std::unique_ptr<SceneNode> BuildAiCharacters(
     std::vector<ModelMesh> robonaut, std::vector<ModelMesh> ingenuity,
     const TextureSet& tex);

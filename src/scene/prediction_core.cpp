@@ -4,12 +4,13 @@
 #include "future_gaze/render/material.hpp"
 #include "future_gaze/render/mesh.hpp"
 #include "future_gaze/scene/builders.hpp"
+#include "future_gaze/scene/node_names.hpp"
 
 namespace future_gaze::builders
 {
 
 std::unique_ptr<SceneNode> BuildPredictionCore(const TextureSet& tex) {
-    auto root = std::make_unique<SceneNode>("prediction_core");
+    auto root = std::make_unique<SceneNode>(names::kPredictionCore);
     root->position = {0.0f, 3.0f, -1.5f};
     // Ry(180°) flips local -Z to world +Z so iris faces the camera.
     // Rx(-15°) tilts gaze slightly downward toward the dinner table.
@@ -42,16 +43,24 @@ std::unique_ptr<SceneNode> BuildPredictionCore(const TextureSet& tex) {
         .draw_as(Mesh::Ring(0.26f, 0.88f, 0.055f, 96), Material::Metal(),
                  tex.metal);
 
-    // ── CIRCUIT RING — emissive green + circuit texture (AI 物件貼圖必要項)
+    // ── CIRCUIT RING — emissive green + circuit texture
     // Placed at z=-1.28 so its top face (world-z +1.32) sits in front of
     // the iris frame top face (world-z +1.275), ensuring it is visible.
     // High segment count keeps the rim smooth; uv_repeat tiles the circuit
     // traces around the band so they read as crisp lines, not smeared noise.
-    root->NewChild("circuit_ring")
-        .at({0.0f, 0.0f, -1.28f})
-        .rot_x(-90.0f)
-        .draw_as(Mesh::Ring(0.36f, 0.58f, 0.04f, 96, 10.0f),
-                 Material::EmissiveGreen(), tex.circuit);
+    // The circuit ring self-rotates. The spin must happen IN the ring's
+    // own plane, otherwise it tumbles around the vertical axis and clips into
+    // the sclera. So a static tilt node (rot_x -90) faces the ring forward, and
+    // its child carries the animated in-plane spin (rot_y about the ring's own
+    // +Y normal, applied *before* the tilt). Animation drives "circuit_ring".
+    {
+        auto& circuit_tilt = root->NewChild("circuit_tilt")
+                                 .at({0.0f, 0.0f, -1.28f})
+                                 .rot_x(-90.0f);
+        circuit_tilt.NewChild(names::kCircuitRing)
+            .draw_as(Mesh::Ring(0.36f, 0.58f, 0.04f, 96, 10.0f),
+                     Material::EmissiveGreen(), tex.circuit);
+    }
 
     // ── SCAN RING (emissive cyan halo)
     // ────────────────────────────────────────
@@ -81,7 +90,7 @@ std::unique_ptr<SceneNode> BuildPredictionCore(const TextureSet& tex) {
                      tex.metal);
     }
 
-    // ── EMISSIVE GLOW (P3.3) ──────────────────────────────────────────────
+    // ── EMISSIVE GLOW ─────────────────────────────────────────────────────
     // Fake bloom via additive, unlit, depth-read-only shells layered just in
     // front of the emissive rings (local z < the rings so they face the
     // viewer). Concentric rings of growing radius and falling intensity give

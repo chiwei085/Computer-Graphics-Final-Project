@@ -18,6 +18,28 @@ SceneNode& SceneNode::NewChild(std::string name) {
     return *AddChild(std::make_unique<SceneNode>(std::move(name)));
 }
 
+SceneNode* SceneNode::Find(const std::string& name) {
+    if (name_ == name) {
+        return this;
+    }
+    for (const auto& child : children_) {
+        if (SceneNode* hit = child->Find(name)) {
+            return hit;
+        }
+    }
+    return nullptr;
+}
+
+void SceneNode::Collect(const std::string& prefix,
+                        std::vector<SceneNode*>& out) {
+    if (name_.rfind(prefix, 0) == 0) {
+        out.push_back(this);
+    }
+    for (const auto& child : children_) {
+        child->Collect(prefix, out);
+    }
+}
+
 void SceneNode::Draw() const {
     const ScopedMatrixPush push;
 
