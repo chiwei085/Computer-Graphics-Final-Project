@@ -69,6 +69,7 @@ public:
 
     // Pushes transform, draws renderable (if any), recurses children, pops
     void Draw() const;
+    void DrawShadow(float min_world_y, float max_world_y) const;
 
     [[nodiscard]] const std::string& name() const noexcept { return name_; }
 
@@ -80,6 +81,9 @@ public:
     void Collect(const std::string& prefix, std::vector<SceneNode*>& out);
 
 private:
+    void DrawShadow(float min_world_y, float max_world_y,
+                    float parent_world_y) const;
+
     std::string name_;
     std::vector<std::unique_ptr<SceneNode>> children_;
 };

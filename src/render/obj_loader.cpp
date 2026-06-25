@@ -273,7 +273,7 @@ std::vector<ModelMesh> ObjLoader::Load(const std::filesystem::path& path) {
             mat = Material(m.ambient, m.diffuse, m.specular, m.shininess);
         }
 
-        result.push_back({Mesh(std::move(vertices)), mat});
+        result.push_back({Mesh(std::move(vertices)), mat, group.mat_name});
     }
 
     return result;

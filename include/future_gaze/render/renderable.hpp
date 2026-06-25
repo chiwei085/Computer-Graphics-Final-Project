@@ -41,6 +41,13 @@ struct Renderable
         }
     }
 
+    void DrawShadow() const {
+        if (additive) {
+            return;
+        }
+        mesh.Draw();
+    }
+
 private:
     // Additive halo pass: lighting off so the diffuse colour shows at full
     // strength, additive blend so overlapping layers brighten, and depth

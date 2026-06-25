@@ -11,7 +11,7 @@ GlutWindow::GlutWindow(int width, int height, const char* title,
                        Renderer& renderer)
     : renderer_(renderer) {
     active_window_ = this;
-    glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGBA | GLUT_DEPTH);
+    glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGBA | GLUT_DEPTH | GLUT_STENCIL);
     glutInitWindowSize(width, height);
     glutCreateWindow(title);
     glutDisplayFunc(DisplayCallback);
@@ -68,7 +68,8 @@ void GlutWindow::MouseCallback(int button, int state, int x, int y) {
         if (state == GLUT_DOWN) {
             active_window_->drag_mode_ = DragMode::Orbit;
             active_window_->renderer_.BeginCameraDrag(x, y);
-        } else {
+        }
+        else {
             active_window_->drag_mode_ = DragMode::None;
             active_window_->renderer_.EndCameraDrag();
         }
@@ -80,7 +81,8 @@ void GlutWindow::MouseCallback(int button, int state, int x, int y) {
         if (state == GLUT_DOWN) {
             active_window_->drag_mode_ = DragMode::Pan;
             active_window_->renderer_.BeginCameraPan(x, y);
-        } else {
+        }
+        else {
             active_window_->drag_mode_ = DragMode::None;
             active_window_->renderer_.EndCameraPan();
         }

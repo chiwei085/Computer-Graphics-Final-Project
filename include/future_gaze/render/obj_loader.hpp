@@ -1,6 +1,7 @@
 #pragma once
 
 #include <filesystem>
+#include <string>
 #include <vector>
 
 #include "future_gaze/render/material.hpp"
@@ -13,6 +14,7 @@ struct ModelMesh
 {
     Mesh mesh;
     Material material;
+    std::string material_name;
 };
 
 class ObjLoader

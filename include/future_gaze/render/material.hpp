@@ -18,6 +18,12 @@ public:
           shininess_(shininess) {}
 
     void SetEmission(Color emission) { emission_ = emission; }
+    void SetAmbient(Color ambient) { ambient_ = ambient; }
+    void SetDiffuse(Color diffuse) { diffuse_ = diffuse; }
+    void SetSpecular(Color specular) { specular_ = specular; }
+    void SetShininess(float shininess) { shininess_ = shininess; }
+
+    [[nodiscard]] const Color& diffuse() const { return diffuse_; }
 
     void Apply() const;
 

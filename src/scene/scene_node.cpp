@@ -66,4 +66,37 @@ void SceneNode::Draw() const {
     }
 }
 
+void SceneNode::DrawShadow(float min_world_y, float max_world_y) const {
+    DrawShadow(min_world_y, max_world_y, 0.0f);
+}
+
+void SceneNode::DrawShadow(float min_world_y, float max_world_y,
+                           float parent_world_y) const {
+    const float world_y = parent_world_y + position.y;
+    const ScopedMatrixPush push;
+
+    glTranslatef(position.x, position.y, position.z);
+    if (euler_deg.y != 0.0f) {
+        glRotatef(euler_deg.y, 0.0f, 1.0f, 0.0f);
+    }
+    if (euler_deg.x != 0.0f) {
+        glRotatef(euler_deg.x, 1.0f, 0.0f, 0.0f);
+    }
+    if (euler_deg.z != 0.0f) {
+        glRotatef(euler_deg.z, 0.0f, 0.0f, 1.0f);
+    }
+    if (scale.x != 1.0f || scale.y != 1.0f || scale.z != 1.0f) {
+        glScalef(scale.x, scale.y, scale.z);
+    }
+
+    if (renderable.has_value() && world_y >= min_world_y &&
+        world_y <= max_world_y) {
+        renderable->DrawShadow();
+    }
+
+    for (const auto& child : children_) {
+        child->DrawShadow(min_world_y, max_world_y, world_y);
+    }
+}
+
 }  // namespace future_gaze
