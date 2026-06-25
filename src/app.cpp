@@ -7,7 +7,7 @@ namespace future_gaze
 
 App::App(int* argc, char** argv) {
     glutInit(argc, argv);
-    window_.emplace(1280, 720, "Future's Gaze - P0", renderer_);
+    window_.emplace(1280, 720, "Future's Gaze", renderer_);
 }
 
 void App::Run() {

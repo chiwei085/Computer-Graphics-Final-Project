@@ -12,10 +12,26 @@ public:
 
     Material() = default;
     Material(Color ambient, Color diffuse, Color specular, float shininess)
-        : ambient_(ambient), diffuse_(diffuse), specular_(specular),
+        : ambient_(ambient),
+          diffuse_(diffuse),
+          specular_(specular),
           shininess_(shininess) {}
 
+    void SetEmission(Color emission) { emission_ = emission; }
+
     void Apply() const;
+
+    // Named presets
+    static Material Wood();
+    static Material DarkWood();
+    static Material Metal();
+    static Material Chrome();
+    static Material Porcelain();
+    static Material Glass();
+    static Material Cloth();
+    static Material BlackMatte();
+    static Material EmissiveCyan();
+    static Material EmissiveGreen();
 
 private:
     Color ambient_{0.12f, 0.16f, 0.18f, 1.0f};

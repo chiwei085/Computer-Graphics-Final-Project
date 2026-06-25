@@ -25,6 +25,10 @@ add_executable(future_gaze
     src/render/obj_loader.cpp
     src/render/renderer.cpp
     src/render/texture.cpp
+    src/scene/scene_node.cpp
+    src/scene/dinner_table.cpp
+    src/scene/prediction_core.cpp
+    src/scene/ai_characters.cpp
 )
 
 target_include_directories(future_gaze

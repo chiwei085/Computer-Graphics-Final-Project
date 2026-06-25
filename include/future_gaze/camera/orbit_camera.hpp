@@ -17,15 +17,17 @@ public:
     void Zoom(float wheel_steps);
 
 private:
-    [[nodiscard]] constexpr Vec3 Target() const noexcept { return {}; }
+    [[nodiscard]] constexpr Vec3 Target() const noexcept {
+        return {0.0f, 1.5f, -0.5f};
+    }
     [[nodiscard]] Vec3 Eye() const;
 
     bool dragging_ = false;
     int last_x_ = 0;
     int last_y_ = 0;
-    float yaw_radians_ = 0.75f;
-    float pitch_radians_ = 0.42f;
-    float distance_ = 5.0f;
+    float yaw_radians_ = 0.0f;
+    float pitch_radians_ = 0.25f;
+    float distance_ = 9.0f;
 };
 
 }  // namespace future_gaze

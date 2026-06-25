@@ -7,6 +7,9 @@
 #include <cmath>
 #include <filesystem>
 
+#include "future_gaze/render/obj_loader.hpp"
+#include "future_gaze/scene/builders.hpp"
+
 namespace future_gaze
 {
 
@@ -19,19 +22,23 @@ void Renderer::Initialize() {
     glEnable(GL_TEXTURE_2D);
     glClearColor(0.05f, 0.09f, 0.13f, 1.0f);
 
-    const std::array<float, 4> light_ambient = {0.08f, 0.1f, 0.13f, 1.0f};
+    const std::array<float, 4> light_ambient = {0.08f, 0.10f, 0.13f, 1.0f};
     const std::array<float, 4> light_diffuse = {0.86f, 0.91f, 0.95f, 1.0f};
     const std::array<float, 4> light_specular = {0.55f, 0.62f, 0.68f, 1.0f};
     glLightfv(GL_LIGHT0, GL_AMBIENT, light_ambient.data());
     glLightfv(GL_LIGHT0, GL_DIFFUSE, light_diffuse.data());
     glLightfv(GL_LIGHT0, GL_SPECULAR, light_specular.data());
 
-    cube_ = Mesh::Cube();
-    texture_.CreateDebugCheckerboard();
-
     const std::filesystem::path obj_dir = "assets/obj";
-    robonaut_ = ObjLoader::Load(obj_dir / "Robonaut_2.obj");
-    ingenuity_ = ObjLoader::Load(obj_dir / "Ingenuity_Mars_Helicopter.obj");
+    auto robonaut = ObjLoader::Load(obj_dir / "Robonaut_2.obj");
+    auto ingenuity = ObjLoader::Load(obj_dir / "Ingenuity_Mars_Helicopter.obj");
+
+    // Build the full scene graph
+    scene_root_ = std::make_unique<SceneNode>("root");
+    scene_root_->AddChild(builders::BuildDinnerTable());
+    scene_root_->AddChild(builders::BuildPredictionCore());
+    scene_root_->AddChild(
+        builders::BuildAiCharacters(std::move(robonaut), std::move(ingenuity)));
 
     ApplyProjection();
 }
@@ -53,29 +60,14 @@ void Renderer::Render() {
     glMatrixMode(GL_MODELVIEW);
     const Mat4 view = camera_.ViewMatrix();
     glLoadMatrixf(view.Data());
-    ApplyLighting();
 
     glDisable(GL_TEXTURE_2D);
+    ApplyLighting();
 
-    // Robonaut: centered at origin
-    glPushMatrix();
-    for (const auto& mm : robonaut_) {
-        mm.material.Apply();
-        mm.mesh.Draw();
+    if (scene_root_) {
+        scene_root_->Draw();
     }
-    glPopMatrix();
 
-    // Ingenuity: offset to the right
-    glPushMatrix();
-    glTranslatef(1.8f, 0.0f, 0.0f);
-    glScalef(2.0f, 2.0f, 2.0f);
-    for (const auto& mm : ingenuity_) {
-        mm.material.Apply();
-        mm.mesh.Draw();
-    }
-    glPopMatrix();
-
-    glEnable(GL_TEXTURE_2D);
     glutSwapBuffers();
 }
 
@@ -96,17 +88,18 @@ void Renderer::ZoomCamera(float wheel_steps) {
 }
 
 void Renderer::ApplyLighting() const {
-    const std::array<float, 4> direction = {-0.35f, 0.8f, 0.45f, 0.0f};
-    glLightfv(GL_LIGHT0, GL_POSITION, direction.data());
+    // Light position is set in eye space (after view matrix), so world position
+    // needs to be given each frame.
+    const std::array<float, 4> pos = {-0.35f, 0.80f, 0.45f, 0.0f};
+    glLightfv(GL_LIGHT0, GL_POSITION, pos.data());
 }
 
 void Renderer::ApplyProjection() const {
     const float aspect =
         static_cast<float>(width_) / static_cast<float>(height_);
-    const Mat4 projection =
-        Mat4::Perspective(DegToRad(50.0f), aspect, 0.1f, 100.0f);
+    const Mat4 proj = Mat4::Perspective(DegToRad(55.0f), aspect, 0.1f, 50.0f);
     glMatrixMode(GL_PROJECTION);
-    glLoadMatrixf(projection.Data());
+    glLoadMatrixf(proj.Data());
 }
 
 }  // namespace future_gaze

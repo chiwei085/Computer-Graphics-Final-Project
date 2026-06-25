@@ -1,12 +1,9 @@
 #pragma once
 
-#include <vector>
+#include <memory>
 
 #include "future_gaze/camera/orbit_camera.hpp"
-#include "future_gaze/render/material.hpp"
-#include "future_gaze/render/mesh.hpp"
-#include "future_gaze/render/obj_loader.hpp"
-#include "future_gaze/render/texture.hpp"
+#include "future_gaze/scene/scene_node.hpp"
 
 namespace future_gaze
 {
@@ -32,11 +29,7 @@ private:
     int height_ = 720;
     float elapsed_seconds_ = 0.0f;
     OrbitCamera camera_;
-    Mesh cube_;
-    Material material_;
-    Texture texture_;
-    std::vector<ModelMesh> robonaut_;
-    std::vector<ModelMesh> ingenuity_;
+    std::unique_ptr<SceneNode> scene_root_;
 };
 
 }  // namespace future_gaze

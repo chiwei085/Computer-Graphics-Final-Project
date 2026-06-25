@@ -13,7 +13,7 @@ constexpr float kDragSensitivity = 0.008f;
 constexpr float kMinPitch = -1.25f;
 constexpr float kMaxPitch = 1.25f;
 constexpr float kMinDistance = 2.0f;
-constexpr float kMaxDistance = 12.0f;
+constexpr float kMaxDistance = 18.0f;
 
 }  // namespace
 
@@ -34,8 +34,10 @@ void OrbitCamera::DragTo(int x, int y) {
 
     const int dx = x - last_x_;
     const int dy = y - last_y_;
-    yaw_radians_ += static_cast<float>(dx) * kDragSensitivity;
-    pitch_radians_ += static_cast<float>(dy) * kDragSensitivity;
+    // Negate so drag direction matches scene motion (drag right → scene goes
+    // right).
+    yaw_radians_ -= static_cast<float>(dx) * kDragSensitivity;
+    pitch_radians_ -= static_cast<float>(dy) * kDragSensitivity;
     pitch_radians_ = std::clamp(pitch_radians_, kMinPitch, kMaxPitch);
     last_x_ = x;
     last_y_ = y;
@@ -52,9 +54,10 @@ void OrbitCamera::Zoom(float wheel_steps) {
 
 Vec3 OrbitCamera::Eye() const {
     const float cos_pitch = std::cos(pitch_radians_);
-    return Vec3{distance_ * std::sin(yaw_radians_) * cos_pitch,
-                distance_ * std::sin(pitch_radians_),
-                distance_ * std::cos(yaw_radians_) * cos_pitch};
+    const Vec3 t = Target();
+    return Vec3{t.x + distance_ * std::sin(yaw_radians_) * cos_pitch,
+                t.y + distance_ * std::sin(pitch_radians_),
+                t.z + distance_ * std::cos(yaw_radians_) * cos_pitch};
 }
 
 }  // namespace future_gaze
