@@ -7,6 +7,7 @@ requires-python = ">=3.12"
 dependencies = [
     "dracopy>=2.0.0",
     "numpy>=2.5.0",
+    "opencv-python-headless>=4.13.0.92",
     "pillow>=12.2.0",
     "pyautogui>=0.9.54",
     "pygltflib>=1.16.5",

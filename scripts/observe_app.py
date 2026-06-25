@@ -12,6 +12,8 @@ Exposes enough information for AI-driven testing and observation:
   zoom        - mouse-wheel scroll to zoom camera
   key         - send keyboard key to the app window
   click       - click at window-relative coordinates (fractions 0.0-1.0)
+  record      - capture the window to an mp4 via xwd frames + ffmpeg
+  motion      - record a clip and report motion / smoothness / liveliness
 
 Usage:
   uv run python observe_app.py info
@@ -20,6 +22,7 @@ Usage:
   uv run python observe_app.py orbit 200 -50
   uv run python observe_app.py zoom 3
   uv run python observe_app.py key escape
+  uv run python observe_app.py motion --duration 5
 """
 
 from __future__ import annotations
@@ -593,6 +596,324 @@ def info() -> None:
     # ── Screenshot + analysis ──
     typer.echo("")
     screenshot()
+
+
+# ── Motion capture & analysis ──────────────────────────────────────────────────
+
+
+def _grab_frame(win_id: str, w: int, h: int, env: dict, color: bool):
+    """Grab one window frame via xwd | ffmpeg → numpy array (gray or BGR).
+
+    xwd reads the exact GL framebuffer by window id (works under WSLg, where
+    ffmpeg x11grab only sees a black root). Returns None on a malformed frame.
+    """
+    import numpy as np
+
+    pix = "bgr24" if color else "gray"
+    xwd = subprocess.Popen(
+        ["xwd", "-id", win_id, "-silent"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        env=env,
+    )
+    ff = subprocess.run(
+        ["ffmpeg", "-v", "error", "-i", "pipe:0", "-f", "rawvideo", "-pix_fmt", pix, "pipe:1"],
+        stdin=xwd.stdout,
+        capture_output=True,
+    )
+    xwd.stdout.close()  # type: ignore[union-attr]
+    xwd.wait()
+    data = ff.stdout
+    expected = w * h * (3 if color else 1)
+    if len(data) != expected:
+        return None
+    arr = np.frombuffer(data, np.uint8)
+    return arr.reshape(h, w, 3) if color else arr.reshape(h, w)
+
+
+def _capture_burst(duration: float, color: bool = False):
+    """Capture window frames as fast as xwd allows for `duration` seconds.
+
+    Returns (frames, timestamps, w, h). Real per-frame timestamps are returned
+    so the analysis can normalize by actual dt (xwd cadence is ~10-15 fps and
+    slightly uneven), keeping the smoothness metric honest.
+    """
+    import numpy as np
+
+    _ensure_display()
+    env = {**os.environ, "DISPLAY": os.environ.get("DISPLAY", ":0")}
+    win_id = _find_window_id_xwininfo()
+    if win_id is None:
+        typer.echo("✗ Window not found. Is the app running?", err=True)
+        raise typer.Exit(1)
+    _, _, w, h = _require_window()
+
+    frames: list = []
+    ts: list[float] = []
+    t0 = time.time()
+    while time.time() - t0 < duration:
+        f = _grab_frame(win_id, w, h, env, color)
+        if f is not None:
+            frames.append(f.astype(np.float32) if not color else f)
+            ts.append(time.time())
+    return frames, np.array(ts), w, h
+
+
+def _grade(score: float) -> str:
+    if score >= 85:
+        return "excellent — fluid, high-class"
+    if score >= 70:
+        return "good — smooth"
+    if score >= 55:
+        return "acceptable — minor stutter"
+    if score >= 35:
+        return "rough — noticeable jerk/stutter"
+    return "poor — stiff or broken"
+
+
+@cli.command()
+def record(
+    out: Annotated[Path | None, typer.Option("--out", "-o", help="Output mp4 path.")] = None,
+    duration: float = typer.Option(5.0, "--duration", "-d", help="Clip length (seconds)."),
+) -> None:
+    """
+    Record the app window to an mp4 by capturing xwd frames (no input sent).
+
+    Plays back at the real capture rate so the clip's timing matches what was
+    seen. (ffmpeg x11grab cannot see the WSLg GL surface, so xwd is used.)
+    """
+    import numpy as np
+
+    SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
+    out_path = out or (SCREENSHOT_DIR / f"clip_{int(time.time())}.mp4")
+    typer.echo(f"→ capturing {duration:.1f}s via xwd ...")
+    frames, ts, w, h = _capture_burst(duration, color=True)
+    if len(frames) < 2:
+        typer.echo("✗ Too few frames captured.", err=True)
+        raise typer.Exit(1)
+    eff_fps = len(frames) / (ts[-1] - ts[0]) if ts[-1] > ts[0] else 12.0
+    enc = subprocess.run(
+        ["ffmpeg", "-y", "-v", "error", "-f", "rawvideo", "-pix_fmt", "bgr24",
+         "-s", f"{w}x{h}", "-r", f"{eff_fps:.3f}", "-i", "pipe:0",
+         "-pix_fmt", "yuv420p", str(out_path)],
+        input=np.concatenate([f.reshape(-1) for f in frames]).tobytes(),
+        capture_output=True,
+    )
+    if enc.returncode != 0:
+        typer.echo(enc.stderr[-400:].decode(errors="replace"), err=True)
+        raise typer.Exit(1)
+    typer.echo(f"✓ Saved: {out_path}  [{len(frames)} frames @ {eff_fps:.1f}fps]")
+
+
+@cli.command()
+def motion(
+    duration: float = typer.Option(6.0, "--duration", "-d", help="Capture length (seconds)."),
+    flow: bool = typer.Option(True, "--flow/--no-flow", help="Run optical-flow velocity analysis."),
+) -> None:
+    """
+    Capture the self-running animation and report motion / smoothness metrics.
+
+    Designed to judge whether the scene moves *and* moves smoothly ("流暢/高級感")
+    rather than stiffly. Send no input first — the scene animates on its own.
+    Frames are captured via xwd (WSLg-safe) at real timestamps; the motion
+    signal is normalized to per-second rates so uneven capture cadence does not
+    masquerade as jerk.
+
+    Reported metrics:
+      activity        inter-frame pixel change rate (is anything moving?)
+      moving frames   fraction of frames with real motion (vs frozen)
+      jerk            high-frequency variation of the motion rate (lower=smoother)
+      velocity smooth optical-flow speed continuity 0-100 (higher=more fluid)
+      per-region      where motion happens (3x3 grid) - verify each element moves
+      SMOOTHNESS      overall 0-100 score + grade
+    """
+    import numpy as np
+
+    typer.echo(f"→ capturing {duration:.1f}s via xwd (no input sent) ...")
+    grays, ts, w, h = _capture_burst(duration, color=False)
+
+    n = len(grays)
+    if n < 4:
+        typer.echo(f"✗ Only {n} frames captured — cannot analyze.", err=True)
+        raise typer.Exit(1)
+
+    cv2 = None
+    if flow:
+        try:
+            import cv2
+        except ImportError:
+            typer.echo(
+                "⚠ opencv not installed; skipping flow. "
+                "(uv add opencv-python-headless)",
+                err=True,
+            )
+            flow = False
+
+    eff_fps = n / (ts[-1] - ts[0]) if ts[-1] > ts[0] else 0.0
+    dt = np.diff(ts)  # real seconds between consecutive frames
+    dt = np.clip(dt, 1e-3, None)
+
+    # Downscaled copies for optical flow (cheaper, robust to texture noise).
+    if flow:
+        smalls = [cv2.resize(g, (320, 180)) for g in grays]
+
+    # ── Inter-frame motion signal, normalized to per-second rate ──────────────
+    raw = np.array([np.mean(np.abs(grays[i] - grays[i - 1])) for i in range(1, n)])
+    rate = raw / dt  # pixel-Δ per second — independent of capture cadence
+    activity = float(raw.mean())
+    activity_max = float(raw.max())
+    median = float(np.median(raw)) if raw.size else 0.0
+    frozen_frac = float(np.mean(raw < 0.02))
+    moving_frac = float(np.mean(raw > 0.05))
+
+    # Jerk: abruptness of the (cadence-normalized) motion rate, normalized by its
+    # own mean. Smooth animation → gradual change → low jerk.
+    jerk = float(np.std(np.diff(rate)) / (rate.mean() + 1e-6))
+
+    # Stutter spikes: low-motion frames sandwiched between higher-motion ones.
+    spikes = 0
+    for i in range(1, len(raw) - 1):
+        if raw[i] < 0.4 * median and raw[i - 1] > median and raw[i + 1] > median:
+            spikes += 1
+
+    # ── Per-region localization (3x3) ─────────────────────────────────────────
+    region_names = [
+        ["top-left", "top-center", "top-right"],
+        ["mid-left", "center", "mid-right"],
+        ["bot-left", "bot-center", "bot-right"],
+    ]
+    region_motion: dict[str, float] = {}
+    region_jerk: dict[str, float] = {}
+    for ry in range(3):
+        for rx in range(3):
+            y0, y1 = ry * h // 3, (ry + 1) * h // 3
+            x0, x1 = rx * w // 3, (rx + 1) * w // 3
+            vals = np.array([
+                np.mean(np.abs(grays[i][y0:y1, x0:x1] - grays[i - 1][y0:y1, x0:x1]))
+                for i in range(1, n)
+            ])
+            region_motion[region_names[ry][rx]] = float(vals.mean())
+            # Per-region temporal jerk — measures whether *this element's* motion
+            # is smooth, free of the cross-mover confound that wrecks a global
+            # centroid. Normalize the rate by dt so cadence jitter is removed.
+            r_rate = vals / dt
+            region_jerk[region_names[ry][rx]] = float(
+                np.std(np.diff(r_rate)) / (r_rate.mean() + 1e-6)
+            )
+
+    # ── Centroid-trajectory smoothness ────────────────────────────────────────
+    # Track where motion concentrates each frame (the motion centroid) and judge
+    # how smoothly that point travels. A fluid orbit/turn traces a path whose
+    # acceleration stays small relative to its velocity; stiff or snapping motion
+    # spikes the acceleration. This is robust to sparse, small movers (unlike a
+    # global optical-flow average) and needs no extra dependency.
+    ys, xs = np.indices((h, w))
+    xs = xs.astype(np.float32)
+    ys = ys.astype(np.float32)
+    cx = np.full(len(raw), w / 2.0, np.float32)
+    cy = np.full(len(raw), h / 2.0, np.float32)
+    for i in range(1, n):
+        d = np.abs(grays[i] - grays[i - 1])
+        s = float(d.sum())
+        if s > 1.0:
+            cx[i - 1] = float((xs * d).sum() / s)
+            cy[i - 1] = float((ys * d).sum() / s)
+        elif i > 1:
+            cx[i - 1], cy[i - 1] = cx[i - 2], cy[i - 2]
+    path = np.stack([cx, cy], axis=1)
+    vel = np.diff(path, axis=0) / dt[1:, None]
+    speed = np.linalg.norm(vel, axis=1)
+    if len(vel) > 1 and speed.mean() > 1e-3:
+        acc = np.diff(vel, axis=0) / dt[2:, None]
+        norm_jerk = float(np.linalg.norm(acc, axis=1).mean() / (speed.mean() + 1e-6))
+        # ~ <8 → fluid, >40 → snappy. Map to 0-100.
+        path_smooth = float(max(0.0, 100.0 * (1.0 - min(norm_jerk / 35.0, 1.0))))
+    else:
+        norm_jerk = 0.0
+        path_smooth = 0.0
+
+    # ── Optical-flow velocity continuity (secondary, informational) ───────────
+    vel_smooth = None
+    flow_speed = None
+    if flow:
+        speeds = []
+        prev = smalls[0]
+        for i in range(1, len(smalls)):
+            f = cv2.calcOpticalFlowFarneback(
+                prev, smalls[i], None, 0.5, 3, 21, 3, 5, 1.2, 0
+            )
+            mag = np.sqrt(f[..., 0] ** 2 + f[..., 1] ** 2)
+            # Average speed of the pixels that actually move (ignore still bg).
+            moving_px = mag[mag > 0.25]
+            speeds.append(float(moving_px.mean()) if moving_px.size else 0.0)
+            prev = smalls[i]
+        speeds = np.array(speeds)
+        flow_speed = float(speeds.mean())
+        if speeds.mean() > 1e-4:
+            # Continuity = 1 - normalized step-to-step change of the speed curve.
+            vc = np.std(np.diff(speeds)) / (speeds.mean() + 1e-6)
+            vel_smooth = float(max(0.0, 100.0 * (1.0 - min(vc, 1.0))))
+        else:
+            vel_smooth = 0.0
+
+    # ── Overall smoothness score ──────────────────────────────────────────────
+    # Penalize jerk and stutter spikes; require that something is actually
+    # moving (a frozen scene cannot be "smooth").
+    # Average the per-region temporal smoothness over regions that actually move
+    # (each animated element judged on its own), plus the global rate-jerk. The
+    # centroid-path and optical-flow numbers are shown for context but excluded
+    # from the score because multiple independent movers confound them.
+    # Only score regions with substantive motion. Below ~0.10 the per-region
+    # rate is dominated by sub-pixel aliasing of small bright/additive elements,
+    # whose normalized jerk is noise rather than real stutter.
+    active = [name for name, m in region_motion.items() if m > 0.10]
+    region_scores = [
+        max(0.0, 100.0 * (1.0 - min(region_jerk[name] / 0.6, 1.0))) for name in active
+    ]
+    region_smooth = float(np.mean(region_scores)) if region_scores else 0.0
+    jerk_score = max(0.0, 100.0 * (1.0 - min(jerk / 0.6, 1.0)))
+    spike_penalty = min(40.0, spikes * 6.0)
+    smoothness = max(0.0, 0.5 * jerk_score + 0.5 * region_smooth - spike_penalty)
+    if activity < 0.01:
+        smoothness = 0.0  # nothing moved
+
+    # ── Report ────────────────────────────────────────────────────────────────
+    typer.echo("\n══ Motion / Smoothness Analysis ══════════════════════════")
+    typer.echo(f"  frames analyzed : {n}  ({eff_fps:.1f} capture fps, {w}×{h})")
+    typer.echo(f"  activity (mean) : {activity:6.3f}   max {activity_max:6.3f}   (pixel Δ 0–255)")
+    typer.echo(f"  moving frames   : {moving_frac*100:5.1f}%   frozen {frozen_frac*100:5.1f}%")
+    typer.echo(f"  jerk            : {jerk:6.3f}   (lower = smoother; <0.30 is fluid)")
+    typer.echo(f"  stutter spikes  : {spikes}")
+    typer.echo(
+        f"  region smooth   : {region_smooth:5.1f} / 100   "
+        "(per-element temporal jerk, primary)"
+    )
+    typer.echo(
+        f"  path smoothness : {path_smooth:5.1f} / 100   "
+        "(motion-centroid trajectory, ctx only)"
+    )
+    if flow:
+        typer.echo(f"  flow speed      : {flow_speed:6.3f} px/frame")
+        typer.echo(
+            f"  velocity smooth : {vel_smooth:5.1f} / 100   "
+            "(optical-flow continuity, ctx only)"
+        )
+
+    typer.echo("\n  ── per-region motion (rate, █) + temporal jerk (j) ──")
+    hot = max(region_motion.values()) or 1.0
+    for ry in range(3):
+        cells = []
+        for rx in range(3):
+            name = region_names[ry][rx]
+            v = region_motion[name]
+            bar = "█" * round(6 * v / hot)
+            jr = region_jerk[name] if v > 0.03 else 0.0
+            cells.append(f"{v:4.2f}{bar:<6} j{jr:4.2f}")
+        typer.echo("    " + " | ".join(cells))
+
+    typer.echo("")
+    typer.echo(f"  ▶ SMOOTHNESS    : {smoothness:5.1f} / 100   [{_grade(smoothness)}]")
+    typer.echo("")
 
 
 # ── Entry point ────────────────────────────────────────────────────────────────
