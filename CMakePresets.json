@@ -1,0 +1,43 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 24,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "clang-debug",
+      "displayName": "Clang Debug (Ninja)",
+      "description": "Primary development preset using clang and ninja.",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/clang-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_CXX_COMPILER": "clang++",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    },
+    {
+      "name": "default-debug",
+      "displayName": "Default Compiler Debug (Ninja)",
+      "description": "Fallback ninja preset using the system default compiler.",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/default-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "clang-debug",
+      "configurePreset": "clang-debug"
+    },
+    {
+      "name": "default-debug",
+      "configurePreset": "default-debug"
+    }
+  ]
+}
