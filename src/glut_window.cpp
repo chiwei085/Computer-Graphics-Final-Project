@@ -53,6 +53,9 @@ void GlutWindow::KeyboardCallback(unsigned char key, int, int) {
     if (key == 27) {
         std::exit(EXIT_SUCCESS);
     }
+    if (key == 'r' || key == 'R') {
+        active_window_->renderer_.ResetCamera();
+    }
 }
 
 void GlutWindow::MouseCallback(int button, int state, int x, int y) {
@@ -60,14 +63,31 @@ void GlutWindow::MouseCallback(int button, int state, int x, int y) {
         return;
     }
 
-    if (button == GLUT_LEFT_BUTTON && state == GLUT_DOWN) {
-        active_window_->renderer_.BeginCameraDrag(x, y);
+    // Orbit: left button
+    if (button == GLUT_LEFT_BUTTON) {
+        if (state == GLUT_DOWN) {
+            active_window_->drag_mode_ = DragMode::Orbit;
+            active_window_->renderer_.BeginCameraDrag(x, y);
+        } else {
+            active_window_->drag_mode_ = DragMode::None;
+            active_window_->renderer_.EndCameraDrag();
+        }
         return;
     }
-    if (button == GLUT_LEFT_BUTTON && state == GLUT_UP) {
-        active_window_->renderer_.EndCameraDrag();
+
+    // Pan: middle button or right button
+    if (button == GLUT_MIDDLE_BUTTON || button == GLUT_RIGHT_BUTTON) {
+        if (state == GLUT_DOWN) {
+            active_window_->drag_mode_ = DragMode::Pan;
+            active_window_->renderer_.BeginCameraPan(x, y);
+        } else {
+            active_window_->drag_mode_ = DragMode::None;
+            active_window_->renderer_.EndCameraPan();
+        }
         return;
     }
+
+    // Scroll wheel (FreeGLUT reports as buttons 3/4)
     if ((button == 3 || button == 4) && state == GLUT_DOWN) {
         active_window_->renderer_.ZoomCamera(button == 3 ? 1.0f : -1.0f);
     }
@@ -77,7 +97,16 @@ void GlutWindow::MotionCallback(int x, int y) {
     if (active_window_ == nullptr) {
         return;
     }
-    active_window_->renderer_.DragCameraTo(x, y);
+    switch (active_window_->drag_mode_) {
+        case DragMode::Orbit:
+            active_window_->renderer_.DragCameraTo(x, y);
+            break;
+        case DragMode::Pan:
+            active_window_->renderer_.PanCameraTo(x, y);
+            break;
+        case DragMode::None:
+            break;
+    }
 }
 
 void GlutWindow::ReshapeCallback(int width, int height) {

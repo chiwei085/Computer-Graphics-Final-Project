@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 #include "future_gaze/render/renderer.hpp"
 
 namespace future_gaze
@@ -23,10 +25,13 @@ private:
     static void MotionCallback(int x, int y);
     static void ReshapeCallback(int width, int height);
 
+    enum class DragMode : uint8_t { None, Orbit, Pan };
+
     inline static GlutWindow* active_window_ = nullptr;
 
     Renderer& renderer_;
     int last_time_ms_ = 0;
+    DragMode drag_mode_ = DragMode::None;
 };
 
 }  // namespace future_gaze
