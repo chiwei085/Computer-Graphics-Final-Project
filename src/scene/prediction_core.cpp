@@ -8,7 +8,7 @@
 namespace future_gaze::builders
 {
 
-std::unique_ptr<SceneNode> BuildPredictionCore() {
+std::unique_ptr<SceneNode> BuildPredictionCore(const TextureSet& tex) {
     auto root = std::make_unique<SceneNode>("prediction_core");
     root->position = {0.0f, 3.0f, -1.5f};
     // Ry(180°) flips local -Z to world +Z so iris faces the camera.
@@ -18,34 +18,38 @@ std::unique_ptr<SceneNode> BuildPredictionCore() {
 
     constexpr float kR = 1.2f;
 
-    // ── SCLERA
-    // ────────────────────────────────────────────────────────────────
+    // ── SCLERA (marble texture)
+    // ──────────────────────────────────────────────
     root->NewChild("sclera").draw_as(Mesh::Sphere(kR, 32, 24),
-                                     Material::Porcelain());
+                                     Material::Porcelain(), tex.marble);
 
     // ── EQUATORIAL CHROME SEAM
     // ────────────────────────────────────────────────
     root->NewChild("seam")
         .at({0.0f, -0.06f, 0.0f})
-        .draw_as(Mesh::Ring(1.18f, 1.235f, 0.12f), Material::Chrome());
+        .draw_as(Mesh::Ring(1.18f, 1.235f, 0.12f), Material::Chrome(),
+                 tex.metal);
 
     // Iris assembly — rings/disk live in local XY plane (rot_x(-90°) maps
     // +Y normal to -Z, facing viewer after the parent's Ry(180°)).
     // Stacked at z = -1.22 … -1.25 to avoid z-fighting.
 
-    // ── IRIS FRAME
-    // ────────────────────────────────────────────────────────────
+    // ── IRIS FRAME (metal texture)
+    // ───────────────────────────────────────────
     root->NewChild("iris_frame")
         .at({0.0f, 0.0f, -1.22f})
         .rot_x(-90.0f)
-        .draw_as(Mesh::Ring(0.26f, 0.88f, 0.055f), Material::Metal());
+        .draw_as(Mesh::Ring(0.26f, 0.88f, 0.055f), Material::Metal(),
+                 tex.metal);
 
-    // ── CIRCUIT RING (emissive green)
-    // ─────────────────────────────────────────
+    // ── CIRCUIT RING — emissive green + circuit texture (AI 物件貼圖必要項)
+    // Placed at z=-1.28 so its top face (world-z +1.32) sits in front of
+    // the iris frame top face (world-z +1.275), ensuring it is visible.
     root->NewChild("circuit_ring")
-        .at({0.0f, 0.0f, -1.23f})
+        .at({0.0f, 0.0f, -1.28f})
         .rot_x(-90.0f)
-        .draw_as(Mesh::Ring(0.36f, 0.58f, 0.04f), Material::EmissiveGreen());
+        .draw_as(Mesh::Ring(0.36f, 0.58f, 0.04f), Material::EmissiveGreen(),
+                 tex.circuit);
 
     // ── SCAN RING (emissive cyan halo)
     // ────────────────────────────────────────
@@ -70,7 +74,8 @@ std::unique_ptr<SceneNode> BuildPredictionCore() {
         root->NewChild("cable")
             .at({0.30f * std::cos(angle), 0.30f * std::sin(angle), 1.18f})
             .rot_x(90.0f)
-            .draw_as(Mesh::Cylinder(0.030f, 0.90f), Material::Metal());
+            .draw_as(Mesh::Cylinder(0.030f, 0.90f), Material::Metal(),
+                     tex.metal);
     }
 
     return root;

@@ -4,7 +4,9 @@ namespace future_gaze::builders
 {
 
 std::unique_ptr<SceneNode> BuildAiCharacters(std::vector<ModelMesh> robonaut,
-                                             std::vector<ModelMesh> ingenuity) {
+                                             std::vector<ModelMesh> ingenuity,
+                                             const TextureSet& tex) {
+    (void)tex;
     auto root = std::make_unique<SceneNode>("ai_characters");
 
     // ── ROBONAUT 2 (standing beside the table)

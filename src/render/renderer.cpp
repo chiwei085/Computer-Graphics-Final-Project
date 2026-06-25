@@ -13,13 +13,24 @@
 namespace future_gaze
 {
 
+namespace
+{
+
+void LoadTexOrCheckerboard(Texture& tex, const std::filesystem::path& path) {
+    if (!tex.LoadFromFile(path)) {
+        tex.CreateDebugCheckerboard();
+    }
+}
+
+}  // namespace
+
 void Renderer::Initialize() {
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_CULL_FACE);
     glEnable(GL_NORMALIZE);
     glEnable(GL_LIGHTING);
     glEnable(GL_LIGHT0);
-    glEnable(GL_TEXTURE_2D);
+    glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
     glClearColor(0.05f, 0.09f, 0.13f, 1.0f);
 
     const std::array<float, 4> light_ambient = {0.08f, 0.10f, 0.13f, 1.0f};
@@ -29,16 +40,34 @@ void Renderer::Initialize() {
     glLightfv(GL_LIGHT0, GL_DIFFUSE, light_diffuse.data());
     glLightfv(GL_LIGHT0, GL_SPECULAR, light_specular.data());
 
+    // Load textures — fall back to debug checkerboard if file is missing
+    const std::filesystem::path tex_dir = "assets/textures";
+    LoadTexOrCheckerboard(textures_["wood"],    tex_dir / "wood.png");
+    LoadTexOrCheckerboard(textures_["cloth"],   tex_dir / "cloth.png");
+    LoadTexOrCheckerboard(textures_["circuit"], tex_dir / "circuit.png");
+    LoadTexOrCheckerboard(textures_["marble"],  tex_dir / "marble.png");
+    LoadTexOrCheckerboard(textures_["metal"],   tex_dir / "metal.png");
+    LoadTexOrCheckerboard(textures_["paper"],   tex_dir / "paper.png");
+
+    builders::TextureSet tex_set{
+        .wood    = GetTexture("wood"),
+        .cloth   = GetTexture("cloth"),
+        .circuit = GetTexture("circuit"),
+        .marble  = GetTexture("marble"),
+        .metal   = GetTexture("metal"),
+        .paper   = GetTexture("paper"),
+    };
+
     const std::filesystem::path obj_dir = "assets/obj";
     auto robonaut = ObjLoader::Load(obj_dir / "Robonaut_2.obj");
     auto ingenuity = ObjLoader::Load(obj_dir / "Ingenuity_Mars_Helicopter.obj");
 
     // Build the full scene graph
     scene_root_ = std::make_unique<SceneNode>("root");
-    scene_root_->AddChild(builders::BuildDinnerTable());
-    scene_root_->AddChild(builders::BuildPredictionCore());
-    scene_root_->AddChild(
-        builders::BuildAiCharacters(std::move(robonaut), std::move(ingenuity)));
+    scene_root_->AddChild(builders::BuildDinnerTable(tex_set));
+    scene_root_->AddChild(builders::BuildPredictionCore(tex_set));
+    scene_root_->AddChild(builders::BuildAiCharacters(
+        std::move(robonaut), std::move(ingenuity), tex_set));
 
     ApplyProjection();
 }
@@ -61,7 +90,6 @@ void Renderer::Render() {
     const Mat4 view = camera_.ViewMatrix();
     glLoadMatrixf(view.Data());
 
-    glDisable(GL_TEXTURE_2D);
     ApplyLighting();
 
     if (scene_root_) {
@@ -83,8 +111,29 @@ void Renderer::EndCameraDrag() {
     camera_.EndDrag();
 }
 
+void Renderer::BeginCameraPan(int x, int y) {
+    camera_.BeginPan(x, y);
+}
+
+void Renderer::PanCameraTo(int x, int y) {
+    camera_.PanTo(x, y);
+}
+
+void Renderer::EndCameraPan() {
+    camera_.EndPan();
+}
+
 void Renderer::ZoomCamera(float wheel_steps) {
     camera_.Zoom(wheel_steps);
+}
+
+void Renderer::ResetCamera() {
+    camera_.Reset();
+}
+
+const Texture* Renderer::GetTexture(const std::string& name) const {
+    auto it = textures_.find(name);
+    return (it != textures_.end()) ? &it->second : nullptr;
 }
 
 void Renderer::ApplyLighting() const {

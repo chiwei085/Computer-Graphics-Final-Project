@@ -11,30 +11,32 @@ namespace
 {
 
 void BuildChair(SceneNode& root, Vec3 base, float yaw_deg,
-                const Material& upholstery, const Material& leg_mat) {
+                const Material& upholstery, const Material& leg_mat,
+                const Texture* cloth_tex, const Texture* metal_tex) {
     auto& chair = root.NewChild("chair").at(base).rot_y(yaw_deg);
     chair.NewChild("seat")
         .at({0.0f, 0.45f, 0.0f})
         .scaled({0.22f, 0.022f, 0.22f})
-        .draw_as(Mesh::Cube(), upholstery);
+        .draw_as(Mesh::Cube(), upholstery, cloth_tex);
     chair.NewChild("back")
         .at({0.0f, 0.70f, -0.20f})
         .scaled({0.22f, 0.25f, 0.022f})
-        .draw_as(Mesh::Cube(), upholstery);
+        .draw_as(Mesh::Cube(), upholstery, cloth_tex);
     const std::array<Vec3, 4> lp = {
         Vec3{-0.18f, 0.0f, -0.18f}, Vec3{0.18f, 0.0f, -0.18f},
         Vec3{-0.18f, 0.0f, 0.18f}, Vec3{0.18f, 0.0f, 0.18f}};
     for (const auto& p : lp) {
         chair.NewChild("leg").at(p).draw_as(Mesh::Cylinder(0.020f, 0.44f),
-                                            leg_mat);
+                                            leg_mat, metal_tex);
     }
 }
 
 void BuildPlaceSetting(SceneNode& root, float x, float z,
-                       const Material& plate_mat, const Material& glass_mat) {
+                       const Material& plate_mat, const Material& glass_mat,
+                       const Texture* marble_tex) {
     root.NewChild("plate")
         .at({x, 0.802f, z})
-        .draw_as(Mesh::Disk(0.14f), plate_mat);
+        .draw_as(Mesh::Disk(0.14f), plate_mat, marble_tex);
     auto& glass = root.NewChild("glass").at({x + 0.18f, 0.802f, z - 0.14f});
     glass.NewChild("stem").draw_as(Mesh::Cylinder(0.012f, 0.18f), glass_mat);
     glass.NewChild("bowl")
@@ -44,7 +46,7 @@ void BuildPlaceSetting(SceneNode& root, float x, float z,
 
 }  // namespace
 
-std::unique_ptr<SceneNode> BuildDinnerTable() {
+std::unique_ptr<SceneNode> BuildDinnerTable(const TextureSet& tex) {
     auto root = std::make_unique<SceneNode>("dinner_scene");
 
     const Material wood = Material::Wood();
@@ -58,35 +60,34 @@ std::unique_ptr<SceneNode> BuildDinnerTable() {
     // ─────────────────────────────────────────────────────────────────
     {
         auto& table = root->NewChild("table");
-        // Top: center at y=0.76, half-thickness 0.04 → top face at y=0.80
         table.NewChild("top")
             .at({0.0f, 0.76f, 0.0f})
             .scaled({2.1f, 0.04f, 0.95f})
-            .draw_as(Mesh::Cube(), wood);
+            .draw_as(Mesh::Cube(), wood, tex.wood);
 
         const std::array<Vec3, 4> leg_pos = {
             Vec3{-1.98f, 0.0f, -0.88f}, Vec3{1.98f, 0.0f, -0.88f},
             Vec3{-1.98f, 0.0f, 0.88f}, Vec3{1.98f, 0.0f, 0.88f}};
         for (const auto& p : leg_pos) {
             table.NewChild("leg").at(p).draw_as(Mesh::Cylinder(0.045f, 0.72f),
-                                                dark_wood);
+                                                dark_wood, tex.wood);
         }
     }
 
     // ── CHAIRS
     // ────────────────────────────────────────────────────────────────
-    BuildChair(*root, {-1.20f, 0.0f, -1.38f}, -5.0f, cloth, metal);
-    BuildChair(*root, {0.00f, 0.0f, -1.50f}, 0.0f, cloth, metal);
-    BuildChair(*root, {1.20f, 0.0f, -1.35f}, 7.0f, cloth, metal);
-    BuildChair(*root, {-1.20f, 0.0f, 1.35f}, 185.0f, cloth, metal);
-    BuildChair(*root, {0.00f, 0.0f, 1.22f}, 180.0f, cloth, metal);
-    BuildChair(*root, {1.20f, 0.0f, 1.38f}, 174.0f, cloth, metal);
+    BuildChair(*root, {-1.20f, 0.0f, -1.38f}, -5.0f,   cloth, metal, tex.cloth, tex.metal);
+    BuildChair(*root, {0.00f, 0.0f, -1.50f},   0.0f,   cloth, metal, tex.cloth, tex.metal);
+    BuildChair(*root, {1.20f, 0.0f, -1.35f},   7.0f,   cloth, metal, tex.cloth, tex.metal);
+    BuildChair(*root, {-1.20f, 0.0f, 1.35f},  185.0f,  cloth, metal, tex.cloth, tex.metal);
+    BuildChair(*root, {0.00f, 0.0f, 1.22f},   180.0f,  cloth, metal, tex.cloth, tex.metal);
+    BuildChair(*root, {1.20f, 0.0f, 1.38f},   174.0f,  cloth, metal, tex.cloth, tex.metal);
 
     // ── PLACE SETTINGS
     // ────────────────────────────────────────────────────────
-    BuildPlaceSetting(*root, -1.20f, 0.0f, porcelain, glass_mat);
-    BuildPlaceSetting(*root, 0.00f, 0.0f, porcelain, glass_mat);
-    BuildPlaceSetting(*root, 1.20f, 0.0f, porcelain, glass_mat);
+    BuildPlaceSetting(*root, -1.20f, 0.0f, porcelain, glass_mat, tex.marble);
+    BuildPlaceSetting(*root, 0.00f, 0.0f,  porcelain, glass_mat, tex.marble);
+    BuildPlaceSetting(*root, 1.20f, 0.0f,  porcelain, glass_mat, tex.marble);
 
     // ── CAKE
     // ──────────────────────────────────────────────────────────────────
@@ -133,15 +134,17 @@ std::unique_ptr<SceneNode> BuildDinnerTable() {
         }
     }
 
-    // ── LETTER
-    // ────────────────────────────────────────────────────────────────
+    // ── LETTER (paper texture)
+    // ───────────────────────────────────────────────
     root->NewChild("letter")
         .at({-0.08f, 0.800f, 0.12f})
         .rot_y(14.0f)
         .scaled({0.092f, 0.0015f, 0.125f})
-        .draw_as(Mesh::Cube(), Material({0.16f, 0.15f, 0.12f, 1.0f},
-                                        {0.92f, 0.90f, 0.82f, 1.0f},
-                                        {0.08f, 0.08f, 0.06f, 1.0f}, 4.0f));
+        .draw_as(Mesh::Cube(),
+                 Material({0.16f, 0.15f, 0.12f, 1.0f},
+                           {0.92f, 0.90f, 0.82f, 1.0f},
+                           {0.08f, 0.08f, 0.06f, 1.0f}, 4.0f),
+                 tex.paper);
 
     return root;
 }

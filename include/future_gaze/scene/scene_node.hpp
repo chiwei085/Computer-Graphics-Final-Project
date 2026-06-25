@@ -8,6 +8,7 @@
 
 #include "future_gaze/math/vec3.hpp"
 #include "future_gaze/render/renderable.hpp"
+#include "future_gaze/render/texture.hpp"
 
 namespace future_gaze
 {
@@ -53,6 +54,10 @@ public:
     }
     SceneNode& draw_as(Mesh m, Material mat) {
         renderable.emplace(Renderable{std::move(m), std::move(mat)});
+        return *this;
+    }
+    SceneNode& draw_as(Mesh m, Material mat, const Texture* tex) {
+        renderable.emplace(Renderable{std::move(m), std::move(mat), tex});
         return *this;
     }
 
