@@ -1,0 +1,12 @@
+.agent-hooks
+
+build/
+
+# scripts/ uv environment (reproducible via: cd scripts && uv sync)
+scripts/.venv/
+
+# Raw binary downloads (regenerate with: cd scripts && uv run python fetch_assets.py fetch)
+assets/raw/
+
+# Large generated OBJ (regenerate with: cd scripts && uv run python convert_glb_to_obj.py)
+assets/obj/Robonaut_2.obj

@@ -1,0 +1,36 @@
+[project]
+name = "future-gaze-scripts"
+version = "0.1.0"
+description = "Asset pipeline scripts for Future's Gaze"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "dracopy>=2.0.0",
+    "numpy>=2.5.0",
+    "pygltflib>=1.16.5",
+    "typer>=0.26.7",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "UP",  # pyupgrade
+    "RUF", # ruff-specific
+]
+ignore = [
+    "B904",   # raise-without-from-inside-except — we surface raw errors intentionally
+    "RUF001", # full-width punctuation is grammatically correct in CJK text
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.15.19",
+]
