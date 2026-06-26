@@ -1,6 +1,6 @@
 #include <cmath>
-#include <cstdio>
 #include <cstdlib>
+#include <iostream>
 #include <string_view>
 #include <vector>
 
@@ -16,8 +16,7 @@ namespace
 {
 
 void Fail(std::string_view message) {
-    std::fprintf(stderr, "tf_tree_tests: %.*s\n",
-                 static_cast<int>(message.size()), message.data());
+    std::cerr << "tf_tree_tests: " << message << '\n';
     std::exit(1);
 }
 
@@ -29,9 +28,8 @@ void Require(bool value, std::string_view message) {
 
 void RequireNear(float actual, float expected, std::string_view message) {
     if (std::abs(actual - expected) > 0.0001f) {
-        std::fprintf(
-            stderr, "tf_tree_tests: %.*s (actual %.6f expected %.6f)\n",
-            static_cast<int>(message.size()), message.data(), actual, expected);
+        std::cerr << "tf_tree_tests: " << message << " (actual " << actual
+                  << " expected " << expected << ")\n";
         std::exit(1);
     }
 }

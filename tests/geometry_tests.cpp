@@ -1,6 +1,6 @@
 #include <cmath>
-#include <cstdio>
 #include <cstdlib>
+#include <iostream>
 #include <string_view>
 
 #include "future_gaze/math/geometry.hpp"
@@ -10,8 +10,7 @@ namespace
 {
 
 void FailGeometry(std::string_view message) {
-    std::fprintf(stderr, "geometry_tests: %.*s\n",
-                 static_cast<int>(message.size()), message.data());
+    std::cerr << "geometry_tests: " << message << '\n';
     std::exit(1);
 }
 
@@ -24,9 +23,8 @@ void RequireGeometry(bool value, std::string_view message) {
 void RequireNearGeometry(float actual, float expected,
                          std::string_view message) {
     if (std::abs(actual - expected) > 0.0001f) {
-        std::fprintf(
-            stderr, "geometry_tests: %.*s (actual %.6f expected %.6f)\n",
-            static_cast<int>(message.size()), message.data(), actual, expected);
+        std::cerr << "geometry_tests: " << message << " (actual " << actual
+                  << " expected " << expected << ")\n";
         std::exit(1);
     }
 }

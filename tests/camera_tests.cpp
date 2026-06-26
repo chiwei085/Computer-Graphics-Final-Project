@@ -1,6 +1,6 @@
 #include <cmath>
-#include <cstdio>
 #include <cstdlib>
+#include <iostream>
 #include <string_view>
 
 #include "future_gaze/anim/easing.hpp"
@@ -11,8 +11,7 @@ namespace
 {
 
 void FailCamera(std::string_view message) {
-    std::fprintf(stderr, "camera_tests: %.*s\n",
-                 static_cast<int>(message.size()), message.data());
+    std::cerr << "camera_tests: " << message << '\n';
     std::exit(1);
 }
 
@@ -24,9 +23,8 @@ void RequireCamera(bool value, std::string_view message) {
 
 void RequireNearCamera(float actual, float expected, std::string_view message) {
     if (std::abs(actual - expected) > 0.0001f) {
-        std::fprintf(stderr, "camera_tests: %.*s (actual %.6f expected %.6f)\n",
-                     static_cast<int>(message.size()), message.data(), actual,
-                     expected);
+        std::cerr << "camera_tests: " << message << " (actual " << actual
+                  << " expected " << expected << ")\n";
         std::exit(1);
     }
 }
@@ -34,11 +32,10 @@ void RequireNearCamera(float actual, float expected, std::string_view message) {
 void RequireNearCamera(future_gaze::Vec3 actual, future_gaze::Vec3 expected,
                        std::string_view message) {
     if (!future_gaze::NearlyEqual(actual, expected, 0.0001f)) {
-        std::fprintf(stderr,
-                     "camera_tests: %.*s "
-                     "(actual %.6f %.6f %.6f expected %.6f %.6f %.6f)\n",
-                     static_cast<int>(message.size()), message.data(), actual.x,
-                     actual.y, actual.z, expected.x, expected.y, expected.z);
+        std::cerr << "camera_tests: " << message << " (actual " << actual.x
+                  << ' ' << actual.y << ' ' << actual.z << " expected "
+                  << expected.x << ' ' << expected.y << ' ' << expected.z
+                  << ")\n";
         std::exit(1);
     }
 }

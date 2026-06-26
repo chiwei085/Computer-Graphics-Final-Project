@@ -106,7 +106,6 @@ struct SweepHit
     return collider.radius;
 }
 
-
 [[nodiscard]] std::optional<SweepHit> SweepPointCircle(Vec2 start, Vec2 delta,
                                                        Vec2 center,
                                                        float radius) {

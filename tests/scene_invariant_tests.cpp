@@ -1,6 +1,6 @@
 #include <cmath>
-#include <cstdio>
 #include <cstdlib>
+#include <iostream>
 #include <string_view>
 #include <vector>
 
@@ -11,8 +11,7 @@ namespace
 {
 
 void FailScene(std::string_view message) {
-    std::fprintf(stderr, "scene_invariant_tests: %.*s\n",
-                 static_cast<int>(message.size()), message.data());
+    std::cerr << "scene_invariant_tests: " << message << '\n';
     std::exit(1);
 }
 
@@ -25,11 +24,10 @@ void RequireScene(bool value, std::string_view message) {
 void RequireNearScene(future_gaze::Vec3 actual, future_gaze::Vec3 expected,
                       std::string_view message) {
     if (!future_gaze::NearlyEqual(actual, expected, 0.0001f)) {
-        std::fprintf(stderr,
-                     "scene_invariant_tests: %.*s "
-                     "(actual %.6f %.6f %.6f expected %.6f %.6f %.6f)\n",
-                     static_cast<int>(message.size()), message.data(), actual.x,
-                     actual.y, actual.z, expected.x, expected.y, expected.z);
+        std::cerr << "scene_invariant_tests: " << message << " (actual "
+                  << actual.x << ' ' << actual.y << ' ' << actual.z
+                  << " expected " << expected.x << ' ' << expected.y << ' '
+                  << expected.z << ")\n";
         std::exit(1);
     }
 }

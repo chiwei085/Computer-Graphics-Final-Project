@@ -1,6 +1,6 @@
 #include <cmath>
-#include <cstdio>
 #include <cstdlib>
+#include <iostream>
 #include <string_view>
 
 #include "future_gaze/physics/physics_world.hpp"
@@ -17,8 +17,7 @@ using future_gaze::physics::PhysicsWorld;
 using future_gaze::physics::Transform2D;
 
 void Fail(std::string_view message) {
-    std::fprintf(stderr, "physics_tests: %.*s\n",
-                 static_cast<int>(message.size()), message.data());
+    std::cerr << "physics_tests: " << message << '\n';
     std::exit(1);
 }
 
@@ -31,11 +30,9 @@ void Require(bool value, std::string_view message) {
 void RequireNear(float actual, float expected, float tolerance,
                  std::string_view message) {
     if (std::abs(actual - expected) > tolerance) {
-        std::fprintf(
-            stderr,
-            "physics_tests: %.*s (actual %.6f expected %.6f tolerance %.6f)\n",
-            static_cast<int>(message.size()), message.data(), actual, expected,
-            tolerance);
+        std::cerr << "physics_tests: " << message << " (actual " << actual
+                  << " expected " << expected << " tolerance " << tolerance
+                  << ")\n";
         std::exit(1);
     }
 }
