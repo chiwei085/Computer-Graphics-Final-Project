@@ -57,10 +57,12 @@ PID_FILE = Path("/tmp/future_gaze.pid")
 LOG_FILE = Path("/tmp/future_gaze.stderr.log")
 SCREENSHOT_DIR = PROJECT_ROOT / "docs" / "screenshots"
 STORY_POSES: dict[str, tuple[int, int] | None] = {
+    # dx * 0.30 deg/px maps to the yaw-sector zones:
+    #   0 deg = Foresight, 150 deg = Longing, 270 deg = Blindspot.
     "future": (0, 270),
-    "longing": (0, 215),
-    "overlap": (115, 235),
-    "blindspot": (420, 0),
+    "longing": (500, 0),
+    "overlap": (200, 235),
+    "blindspot": (900, 0),
     "none": None,
 }
 
@@ -111,6 +113,7 @@ class VisualMetrics:
     lower_center_stddev: float
     lower_center_edge_score: float
     lower_center_very_dark_ratio: float
+
 
 cli = typer.Typer(
     help="Interact with Future's Gaze OpenGL window.",
@@ -167,7 +170,6 @@ def _ease_in_out_quad(t: float) -> float:
 def _timestamp_tag() -> str:
     """Return a collision-resistant timestamp for generated media filenames."""
     return time.strftime("%Y%m%d_%H%M%S") + f"_{time.time_ns() % 1_000_000_000:09d}"
-
 
 
 # ── Window discovery ───────────────────────────────────────────────────────────
@@ -593,9 +595,7 @@ def _visual_metrics(img) -> VisualMetrics:
     full_pixels = list(full_gray.tobytes())
     full_black_ratio = sum(1 for p in full_pixels if p <= 3) / max(1, len(full_pixels))
     center_black_ratio = sum(1 for p in pixels if p <= 3) / max(1, len(pixels))
-    lower_dark_ratio = sum(1 for p in lower_pixels if p <= 8) / max(
-        1, len(lower_pixels)
-    )
+    lower_dark_ratio = sum(1 for p in lower_pixels if p <= 8) / max(1, len(lower_pixels))
     edge_score = edge_score_for(gray)
     lower_edge_score = edge_score_for(lower_gray)
 
@@ -809,13 +809,9 @@ def _validate_visual_checkpoint(
         failures.append(f"center mostly one luma bucket ({metrics.center_dominant_ratio:.2f})")
     if metrics.lower_center_very_dark_ratio > 0.30:
         failures.append(
-            "lower-center foreground too dark "
-            f"({metrics.lower_center_very_dark_ratio:.2f})"
+            f"lower-center foreground too dark ({metrics.lower_center_very_dark_ratio:.2f})"
         )
-    if (
-        metrics.lower_center_brightness < 10.0
-        and metrics.lower_center_edge_score < 0.45
-    ):
+    if metrics.lower_center_brightness < 10.0 and metrics.lower_center_edge_score < 0.45:
         failures.append(
             "lower-center has no usable subject detail "
             f"(brightness={metrics.lower_center_brightness:.1f}, "
@@ -894,7 +890,6 @@ def _drag_gaze(dx: int, dy: int, duration: float) -> None:
     typer.echo(f"✓ Gaze drag ({dx:+d}, {dy:+d})  from ({start_x},{start_y})")
 
 
-
 @cli.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
 def orbit(
     args: Annotated[list[str], typer.Argument(help="dx dy — pixel deltas (may be negative).")],
@@ -962,7 +957,6 @@ def gaze(
         raise typer.Exit(1)
 
     _drag_gaze(dx, dy, duration)
-
 
 
 @cli.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
@@ -1274,9 +1268,7 @@ def visual_gate(
 
         failures: list[str] = []
         for checkpoint in _visual_gate_checkpoints():
-            state = _wait_for_checkpoint_state(
-                checkpoint, proc, timeout=checkpoint_timeout
-            )
+            state = _wait_for_checkpoint_state(checkpoint, proc, timeout=checkpoint_timeout)
             time.sleep(max(0.0, capture_delay))
             image_path = gate_dir / f"{checkpoint.label}.png"
             img = _capture_window_image(image_path)
@@ -1449,7 +1441,34 @@ def _read_video_grays(path: Path):
     return frames, width, height
 
 
-def _analyze_recorded_motion(video_path: Path, manifest_path: Path, flow: bool = True) -> None:
+def _settled_analysis_start(app_log_path: Path) -> float | None:
+    if not app_log_path.exists():
+        return None
+
+    saw_settled = False
+    for line in app_log_path.read_text(errors="replace").splitlines():
+        state = _parse_observe_line(line)
+        if state is None:
+            continue
+        if state.label == "settled":
+            saw_settled = True
+        if (
+            saw_settled
+            and state.table_transition == 0
+            and state.camera_transition == 0
+            and state.camera_restage_pending == 0
+        ):
+            return state.t
+    return None
+
+
+def _analyze_recorded_motion(
+    video_path: Path,
+    manifest_path: Path,
+    flow: bool = True,
+    app_log_path: Path | None = None,
+    analyze_from_settled: bool = False,
+) -> None:
     import numpy as np
 
     records = _load_manifest(manifest_path)
@@ -1472,6 +1491,39 @@ def _analyze_recorded_motion(video_path: Path, manifest_path: Path, flow: bool =
         )
     grays = grays[:n]
     records = records[:n]
+
+    if analyze_from_settled:
+        if app_log_path is None:
+            typer.echo(
+                "⚠ --analyze-from-settled requested without an app log; analyzing full clip.",
+                err=True,
+            )
+        else:
+            settled_start = _settled_analysis_start(app_log_path)
+            if settled_start is None:
+                typer.echo(
+                    f"⚠ No settled transition-free state found in {app_log_path}; "
+                    "analyzing full clip.",
+                    err=True,
+                )
+            else:
+                first = next(
+                    (i for i, r in enumerate(records) if float(r["app_time"]) >= settled_start),
+                    len(records),
+                )
+                if len(records) - first >= 4:
+                    grays = grays[first:]
+                    records = records[first:]
+                    n = len(records)
+                    typer.echo(
+                        f"  analysis window : settled from {settled_start:.3f}s ({n} frames)"
+                    )
+                else:
+                    typer.echo(
+                        f"⚠ Settled analysis window from {settled_start:.3f}s "
+                        "has fewer than 4 frames; analyzing full clip.",
+                        err=True,
+                    )
 
     frame_indices = np.array([int(r["frame_index"]) for r in records], dtype=np.int64)
     app_times = np.array([float(r["app_time"]) for r in records], dtype=np.float64)
@@ -1635,7 +1687,7 @@ def _record_deterministic(
     out: Path | None,
     manifest: Path | None,
     do_build: bool,
-) -> tuple[Path, Path]:
+) -> tuple[Path, Path, Path]:
     if pose not in STORY_POSES:
         typer.echo(f"✗ Unknown pose {pose!r}. Choose: {', '.join(STORY_POSES)}", err=True)
         raise typer.Exit(1)
@@ -1683,10 +1735,7 @@ def _record_deterministic(
     }
 
     ffmpeg = _ffmpeg_exe()
-    typer.echo(
-        f"→ recording {max_frames} frames ({duration:.3f}s @ {fps:.3f} fps) "
-        f"pose={pose}"
-    )
+    typer.echo(f"→ recording {max_frames} frames ({duration:.3f}s @ {fps:.3f} fps) pose={pose}")
     typer.echo(f"→ automation: {automation_path}")
 
     bridge = None
@@ -1771,7 +1820,7 @@ def _record_deterministic(
             f"⚠ expected {max_frames} manifest frames, got {len(records)}",
             err=True,
         )
-    return out_path, manifest_path
+    return out_path, manifest_path, app_log_path
 
 
 @cli.command()
@@ -1800,6 +1849,14 @@ def record(
         help="Analyze motion metrics immediately after recording.",
     ),
     flow: bool = typer.Option(True, "--flow/--no-flow", help="Run optical-flow in --analyze."),
+    analyze_from_settled: bool = typer.Option(
+        True,
+        "--analyze-from-settled/--analyze-full",
+        help=(
+            "For --analyze, ignore automation/restage frames and start once "
+            "the app log reports no active transitions."
+        ),
+    ),
 ) -> None:
     """
     Record a deterministic observer-build framebuffer stream to MP4.
@@ -1807,7 +1864,7 @@ def record(
     Frames are captured from inside the app render loop, piped through the
     bridge helper, and encoded with ffmpeg. Use --analyze to get motion metrics.
     """
-    out_path, manifest_path = _record_deterministic(
+    out_path, manifest_path, app_log_path = _record_deterministic(
         pose=pose,
         duration=duration,
         fps=fps,
@@ -1816,7 +1873,13 @@ def record(
         do_build=do_build,
     )
     if analyze:
-        _analyze_recorded_motion(out_path, manifest_path, flow=flow)
+        _analyze_recorded_motion(
+            out_path,
+            manifest_path,
+            flow=flow,
+            app_log_path=app_log_path,
+            analyze_from_settled=analyze_from_settled,
+        )
 
 
 # ── Entry point ────────────────────────────────────────────────────────────────
