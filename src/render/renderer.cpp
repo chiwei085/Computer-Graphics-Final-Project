@@ -5,14 +5,16 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
-#include <cstdio>
 #include <filesystem>
+#include <iomanip>
+#include <iostream>
 #include <limits>
 #include <numbers>
+#include <sstream>
 
 #include "future_gaze/anim/easing.hpp"
 #ifdef FUTURE_GAZE_OBSERVER_TOOLS
-#include "future_gaze/observer/frame_recorder.hpp"
+#include "future_gaze/observer/frame_stream.hpp"
 #endif
 #include "future_gaze/render/obj_loader.hpp"
 #include "future_gaze/scene/builders.hpp"
@@ -609,17 +611,21 @@ void Renderer::EndGazeDrag() {
 }
 
 void Renderer::LogObservationState(const char* label) const {
-    std::fprintf(stderr,
-                 "[observe] t=%.3f label=%s gaze_mode=%d yaw=%.2f pitch=%.2f "
-                 "zone=%d weights=(%.3f,%.3f,%.3f) table_transition=%d "
-                 "camera_transition=%d camera_restage_pending=%d\n",
-                 elapsed_seconds_, (label != nullptr) ? label : "",
-                 gaze_.control_mode() ? 1 : 0, gaze_.YawOffsetDeg(),
-                 gaze_.PitchOffsetDeg(), static_cast<int>(gaze_.ActiveZone()),
-                 gaze_.ZoneWeight(0), gaze_.ZoneWeight(1), gaze_.ZoneWeight(2),
-                 table_transition_active_ ? 1 : 0,
-                 camera_.transitioning() ? 1 : 0,
-                 camera_restage_pending_ ? 1 : 0);
+    std::ostringstream out;
+    out << std::fixed << std::setprecision(3)
+        << "[observe] t=" << elapsed_seconds_
+        << " label=" << ((label != nullptr) ? label : "")
+        << " gaze_mode=" << (gaze_.control_mode() ? 1 : 0)
+        << std::setprecision(2) << " yaw=" << gaze_.YawOffsetDeg()
+        << " pitch=" << gaze_.PitchOffsetDeg()
+        << " zone=" << static_cast<int>(gaze_.ActiveZone())
+        << std::setprecision(3) << " weights=(" << gaze_.ZoneWeight(0) << ','
+        << gaze_.ZoneWeight(1) << ',' << gaze_.ZoneWeight(2) << ')'
+        << " table_transition=" << (table_transition_active_ ? 1 : 0)
+        << " camera_transition=" << (camera_.transitioning() ? 1 : 0)
+        << " camera_restage_pending=" << (camera_restage_pending_ ? 1 : 0)
+        << '\n';
+    std::cerr << out.str();
 }
 
 const Texture* Renderer::GetTexture(const std::string& name) const {
@@ -668,16 +674,12 @@ void Renderer::DrawPlanarShadowOnGround(float shadow_alpha) {
 }
 
 void Renderer::DrawPlanarShadowOnTable(float shadow_alpha) {
-    if (scene_root_ == nullptr) {
-        return;
-    }
-    const TfHandle dinner_scene = scene_root_->Find("dinner_scene");
-    if (!dinner_scene.IsValid()) {
+    if (scene_root_ == nullptr || !table_root_.IsValid()) {
         return;
     }
     DrawShadowPass(MakeShadowMatrix(kKeyLightPos, kTablePlane),
                    {0.0f, kTableTopY + 0.001f, 0.0f}, {2.10f, 0.001f, 0.95f},
-                   dinner_scene, kTableTopY + 0.001f, 1.80f, shadow_alpha);
+                   table_root_, kTableTopY + 0.001f, 1.80f, shadow_alpha);
 }
 
 void Renderer::DrawGazeDebug() const {

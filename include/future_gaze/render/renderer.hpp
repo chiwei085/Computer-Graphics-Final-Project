@@ -2,9 +2,9 @@
 
 #include <array>
 #include <cstddef>
-#include <map>
 #include <memory>
 #include <string>
+#include <unordered_map>
 
 #include "future_gaze/camera/orbit_camera.hpp"
 #include "future_gaze/render/material.hpp"
@@ -122,7 +122,7 @@ private:
                               {0.150f, 0.170f, 0.165f, 1.0f},
                               {0.040f, 0.050f, 0.052f, 1.0f},
                               6.0f};
-    std::map<std::string, Texture> textures_;
+    std::unordered_map<std::string, Texture> textures_;
     std::unique_ptr<SceneGraph> scene_root_;
     GazeController gaze_;
     SceneAnimation animation_;
