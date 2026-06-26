@@ -277,31 +277,15 @@ RobonautDanceTarget NodeForRole(RobonautDanceNodes& nodes,
 }
 
 RobonautDanceRole ClassifyRobonautPart(const ModelMesh& part) {
-    const MeshBounds bounds = part.mesh.Bounds();
-    const Vec3 center = bounds.Center();
-    const Vec3 size = bounds.Size();
-
+    // The OBJ has no per-joint segmentation — the main cloth and spine frame
+    // each span the full body height. Splitting them across multiple pivot nodes
+    // causes visible tearing during animation. Safe assignment: everything goes
+    // to the whole-body Center node; only unambiguous helmet pieces get Head.
+    const Vec3 center = part.mesh.Bounds().Center();
     if (center.y > 0.38f) {
         return RobonautDanceRole::Head;
     }
-    if (center.y < -0.34f && center.x < -0.02f) {
-        return RobonautDanceRole::LeftAnkle;
-    }
-    if (center.y < -0.34f && center.x > 0.02f) {
-        return RobonautDanceRole::RightAnkle;
-    }
-    if (center.y < 0.04f) {
-        return RobonautDanceRole::LowerBody;
-    }
-    if (std::abs(center.x) > 0.22f && center.y > 0.15f) {
-        return center.x < 0.0f ? RobonautDanceRole::LeftArm
-                               : RobonautDanceRole::RightArm;
-    }
-    if (Contains(part.material_name, "Arm") && size.x < 0.36f) {
-        return center.x < 0.0f ? RobonautDanceRole::LeftArm
-                               : RobonautDanceRole::RightArm;
-    }
-    return RobonautDanceRole::UpperBody;
+    return RobonautDanceRole::Center;
 }
 
 void AddRobonautPartToDanceNode(RobonautDanceNodes& nodes, ModelMesh part) {
