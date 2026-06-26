@@ -1,6 +1,5 @@
 #pragma once
 
-#include <memory>
 #include <vector>
 
 #include "future_gaze/render/obj_loader.hpp"
@@ -20,17 +19,35 @@ struct TextureSet
     const Texture* paper = nullptr;
 };
 
+struct StoryPropAssets
+{
+    std::vector<ModelMesh> infrared_camera;
+    std::vector<ModelMesh> astronaut_glove;
+    std::vector<ModelMesh> crew_lock_bag;
+    std::vector<ModelMesh> dirty_plate;
+    std::vector<ModelMesh> bowl_dirty;
+    std::vector<ModelMesh> stew;
+    std::vector<ModelMesh> cutting_board;
+    std::vector<ModelMesh> chopsticks;
+    std::vector<ModelMesh> present;
+    std::vector<ModelMesh> wall_corkboard;
+    std::vector<ModelMesh> mug_office_tool;
+    std::vector<ModelMesh> closed_umbrella;
+    std::vector<ModelMesh> zz_plant;
+};
+
 // Dinner table with chairs, place settings, cake, flowers, letter.
-[[nodiscard]] std::unique_ptr<SceneNode> BuildDinnerTable(
-    const TextureSet& tex);
+SceneNode& BuildDinnerTable(SceneNode& parent, const TextureSet& tex);
 
 // Layered Prediction Core AI eye.
-[[nodiscard]] std::unique_ptr<SceneNode> BuildPredictionCore(
-    const TextureSet& tex);
+SceneNode& BuildPredictionCore(SceneNode& parent, const TextureSet& tex);
 
 // Robonaut (table side) + Ingenuity (orbit start position).
-[[nodiscard]] std::unique_ptr<SceneNode> BuildAiCharacters(
-    std::vector<ModelMesh> robonaut, std::vector<ModelMesh> ingenuity,
-    const TextureSet& tex);
+SceneNode& BuildAiCharacters(SceneNode& parent, std::vector<ModelMesh> robonaut,
+                             std::vector<ModelMesh> ingenuity,
+                             const TextureSet& tex);
+
+// Imported story props: accident chain, memory altars, quiet blind objects.
+SceneNode& BuildStoryProps(SceneNode& parent, StoryPropAssets assets);
 
 }  // namespace future_gaze::builders

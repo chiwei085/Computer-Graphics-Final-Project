@@ -6,8 +6,10 @@ namespace future_gaze
 {
 
 Material Material::Wood() {
+    // Tighter, richer sheen than a raw plank — reads as a polished dining table
+    // (the hero surface) rather than flat matte timber.
     return Material({0.10f, 0.06f, 0.03f, 1.0f}, {0.45f, 0.28f, 0.12f, 1.0f},
-                    {0.15f, 0.10f, 0.05f, 1.0f}, 12.0f);
+                    {0.26f, 0.20f, 0.13f, 1.0f}, 30.0f);
 }
 
 Material Material::DarkWood() {

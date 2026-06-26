@@ -10,7 +10,33 @@ namespace future_gaze
 class OrbitCamera
 {
 public:
+    // A full snapshot of the camera's framing, used to record a vantage and to
+    // drive scripted transitions between two vantages.
+    struct CameraPose
+    {
+        Quat orientation;
+        Vec3 target;
+        float distance = 9.0f;
+        float pitch = 0.0f;  // mirrors pitch_accumulated_ for clamp continuity
+    };
+
     [[nodiscard]] Mat4 ViewMatrix() const;
+
+    // Advances an in-flight scripted transition (no-op when idle). Call once
+    // per frame before reading ViewMatrix().
+    void Update(float delta_seconds);
+    [[nodiscard]] bool transitioning() const noexcept { return transitioning_; }
+
+    [[nodiscard]] CameraPose CurrentPose() const noexcept;
+    // Smoothly sweep (SmootherStep) from the current pose to `goal` over
+    // `duration` seconds. User input is ignored until it completes.
+    void StartTransitionTo(const CameraPose& goal, float duration);
+    // The eye's own viewpoint: the camera steps just in front of the Prediction
+    // Core (at `eye_origin`, along `gaze_dir`) and looks at `look_at` — used to
+    // watch the dinner table after it slides into the gaze and turns its front
+    // to face the eye, so we see that presented front from the eye's vantage.
+    [[nodiscard]] static CameraPose GazePose(Vec3 eye_origin, Vec3 gaze_dir,
+                                             Vec3 look_at);
 
     // Orbit: left mouse drag — yaw around world Y, pitch around camera local X
     void BeginDrag(int x, int y);
@@ -29,17 +55,25 @@ private:
     [[nodiscard]] Vec3 Eye() const;
 
     // Orbit
-    bool  dragging_          = false;
-    int   last_x_            = 0;
-    int   last_y_            = 0;
-    Quat  orientation_       = Quat::FromAxisAngle({1.0f, 0.0f, 0.0f}, -0.25f);
+    bool dragging_ = false;
+    int last_x_ = 0;
+    int last_y_ = 0;
+    Quat orientation_ = Quat::FromAxisAngle({1.0f, 0.0f, 0.0f}, -0.25f);
     float pitch_accumulated_ = 0.25f;  // tracks total pitch for clamping
-    float distance_          = 9.0f;
+    float distance_ = 9.0f;
 
     // Pan
-    bool panning_    = false;
-    int  pan_last_x_ = 0;
-    int  pan_last_y_ = 0;
+    bool panning_ = false;
+    int pan_last_x_ = 0;
+    int pan_last_y_ = 0;
+
+    // Scripted transition (G-key gaze-POV sweep). While active, user input is
+    // ignored and the pose is eased from `from` to `to`.
+    bool transitioning_ = false;
+    float transition_t_ = 0.0f;
+    float transition_dur_ = 1.0f;
+    CameraPose transition_from_;
+    CameraPose transition_to_;
 
     Vec3 target_{0.0f, 1.5f, -0.5f};
 };

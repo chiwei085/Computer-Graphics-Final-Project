@@ -1,5 +1,9 @@
+#include <array>
+#include <cmath>
+#include <cstddef>
 #include <string>
 #include <string_view>
+#include <utility>
 
 #include "future_gaze/scene/builders.hpp"
 #include "future_gaze/scene/node_names.hpp"
@@ -66,33 +70,279 @@ void ApplyRobonautLakersPalette(Material& mat, std::string_view material_name) {
     mat.SetShininess(56.0f);
 }
 
+enum class RobonautDanceRole
+{
+    Center,
+    LowerBody,
+    UpperBody,
+    Head,
+    LeftArm,
+    RightArm,
+    LeftAnkle,
+    RightAnkle
+};
+
+enum class RobonautDanceJoint
+{
+    Center,
+    LowerBody,
+    UpperBody,
+    Head,
+    LeftShoulder,
+    LeftArm,
+    LeftElbow,
+    LeftWrist,
+    RightShoulder,
+    RightArm,
+    RightElbow,
+    RightWrist,
+    LeftLeg,
+    LeftKnee,
+    LeftAnkle,
+    RightLeg,
+    RightKnee,
+    RightAnkle,
+    Count
+};
+
+constexpr std::size_t kRobonautDanceJointCount =
+    static_cast<std::size_t>(RobonautDanceJoint::Count);
+
+[[nodiscard]] constexpr std::size_t JointIndex(RobonautDanceJoint joint) {
+    return static_cast<std::size_t>(joint);
+}
+
+struct RobonautDanceJointNode
+{
+    SceneNode* node = nullptr;
+    Vec3 pivot{};
+};
+
+struct RobonautDanceNodes
+{
+    std::array<RobonautDanceJointNode, kRobonautDanceJointCount> joint{};
+
+    [[nodiscard]] RobonautDanceJointNode& operator[](
+        RobonautDanceJoint id) noexcept {
+        return joint[JointIndex(id)];
+    }
+
+    [[nodiscard]] const RobonautDanceJointNode& operator[](
+        RobonautDanceJoint id) const noexcept {
+        return joint[JointIndex(id)];
+    }
+};
+
+struct RobonautDanceJointSpec
+{
+    RobonautDanceJoint id;
+    RobonautDanceJoint parent;
+    const char* name;
+    Vec3 pivot;
+};
+
+constexpr RobonautDanceJoint kNoRobonautDanceParent = RobonautDanceJoint::Count;
+
+constexpr std::array<RobonautDanceJointSpec, kRobonautDanceJointCount>
+    kRobonautDanceJointSpecs = {{
+        {RobonautDanceJoint::Center,
+         kNoRobonautDanceParent,
+         names::kRobonautDanceCenter,
+         {0.0f, 0.18f, 0.0f}},
+        {RobonautDanceJoint::LowerBody,
+         RobonautDanceJoint::Center,
+         names::kRobonautDanceLowerBody,
+         {0.0f, -0.12f, 0.0f}},
+        {RobonautDanceJoint::UpperBody,
+         RobonautDanceJoint::Center,
+         names::kRobonautDanceUpperBody,
+         {0.0f, 0.24f, 0.0f}},
+        {RobonautDanceJoint::Head,
+         RobonautDanceJoint::UpperBody,
+         names::kRobonautDanceHead,
+         {0.0f, 0.43f, -0.02f}},
+        {RobonautDanceJoint::LeftShoulder,
+         RobonautDanceJoint::UpperBody,
+         names::kRobonautDanceLeftShoulder,
+         {-0.18f, 0.31f, -0.04f}},
+        {RobonautDanceJoint::LeftArm,
+         RobonautDanceJoint::LeftShoulder,
+         names::kRobonautDanceLeftArm,
+         {-0.32f, 0.28f, -0.08f}},
+        {RobonautDanceJoint::LeftElbow,
+         RobonautDanceJoint::LeftArm,
+         names::kRobonautDanceLeftElbow,
+         {-0.40f, 0.24f, -0.08f}},
+        {RobonautDanceJoint::LeftWrist,
+         RobonautDanceJoint::LeftElbow,
+         names::kRobonautDanceLeftWrist,
+         {-0.45f, 0.22f, -0.08f}},
+        {RobonautDanceJoint::RightShoulder,
+         RobonautDanceJoint::UpperBody,
+         names::kRobonautDanceRightShoulder,
+         {0.18f, 0.31f, -0.04f}},
+        {RobonautDanceJoint::RightArm,
+         RobonautDanceJoint::RightShoulder,
+         names::kRobonautDanceRightArm,
+         {0.32f, 0.28f, -0.08f}},
+        {RobonautDanceJoint::RightElbow,
+         RobonautDanceJoint::RightArm,
+         names::kRobonautDanceRightElbow,
+         {0.40f, 0.24f, -0.08f}},
+        {RobonautDanceJoint::RightWrist,
+         RobonautDanceJoint::RightElbow,
+         names::kRobonautDanceRightWrist,
+         {0.45f, 0.22f, -0.08f}},
+        {RobonautDanceJoint::LeftLeg,
+         RobonautDanceJoint::LowerBody,
+         names::kRobonautDanceLeftLeg,
+         {-0.08f, -0.18f, 0.0f}},
+        {RobonautDanceJoint::LeftKnee,
+         RobonautDanceJoint::LeftLeg,
+         names::kRobonautDanceLeftKnee,
+         {-0.09f, -0.32f, 0.0f}},
+        {RobonautDanceJoint::LeftAnkle,
+         RobonautDanceJoint::LeftKnee,
+         names::kRobonautDanceLeftAnkle,
+         {-0.10f, -0.41f, 0.0f}},
+        {RobonautDanceJoint::RightLeg,
+         RobonautDanceJoint::LowerBody,
+         names::kRobonautDanceRightLeg,
+         {0.08f, -0.18f, 0.0f}},
+        {RobonautDanceJoint::RightKnee,
+         RobonautDanceJoint::RightLeg,
+         names::kRobonautDanceRightKnee,
+         {0.09f, -0.32f, 0.0f}},
+        {RobonautDanceJoint::RightAnkle,
+         RobonautDanceJoint::RightKnee,
+         names::kRobonautDanceRightAnkle,
+         {0.10f, -0.41f, 0.0f}},
+    }};
+
+RobonautDanceNodes AddRobonautDancePivots(SceneNode& rb) {
+    auto& rig = rb.NewChild(names::kRobonautDanceRoot);
+    RobonautDanceNodes nodes;
+    for (const RobonautDanceJointSpec& spec : kRobonautDanceJointSpecs) {
+        SceneNode* parent = &rig;
+        Vec3 parent_pivot{};
+        if (spec.parent != kNoRobonautDanceParent) {
+            const RobonautDanceJointNode& parent_joint = nodes[spec.parent];
+            parent = parent_joint.node;
+            parent_pivot = parent_joint.pivot;
+        }
+        if (parent == nullptr) {
+            continue;
+        }
+        nodes[spec.id] = {
+            &parent->NewChild(spec.name).at(spec.pivot - parent_pivot),
+            spec.pivot,
+        };
+    }
+    return nodes;
+}
+
+struct RobonautDanceTarget
+{
+    SceneNode* node = nullptr;
+    Vec3 pivot;
+};
+
+RobonautDanceTarget TargetForJoint(RobonautDanceNodes& nodes,
+                                   RobonautDanceJoint joint) {
+    const RobonautDanceJointNode& target = nodes[joint];
+    return {target.node, target.pivot};
+}
+
+RobonautDanceTarget NodeForRole(RobonautDanceNodes& nodes,
+                                RobonautDanceRole role) {
+    switch (role) {
+        case RobonautDanceRole::Center:
+            return TargetForJoint(nodes, RobonautDanceJoint::Center);
+        case RobonautDanceRole::LowerBody:
+            return TargetForJoint(nodes, RobonautDanceJoint::LowerBody);
+        case RobonautDanceRole::UpperBody:
+            return TargetForJoint(nodes, RobonautDanceJoint::UpperBody);
+        case RobonautDanceRole::Head:
+            return TargetForJoint(nodes, RobonautDanceJoint::Head);
+        case RobonautDanceRole::LeftArm:
+            return TargetForJoint(nodes, RobonautDanceJoint::LeftArm);
+        case RobonautDanceRole::RightArm:
+            return TargetForJoint(nodes, RobonautDanceJoint::RightArm);
+        case RobonautDanceRole::LeftAnkle:
+            return TargetForJoint(nodes, RobonautDanceJoint::LeftAnkle);
+        case RobonautDanceRole::RightAnkle:
+            return TargetForJoint(nodes, RobonautDanceJoint::RightAnkle);
+    }
+    return TargetForJoint(nodes, RobonautDanceJoint::UpperBody);
+}
+
+RobonautDanceRole ClassifyRobonautPart(const ModelMesh& part) {
+    const MeshBounds bounds = part.mesh.Bounds();
+    const Vec3 center = bounds.Center();
+    const Vec3 size = bounds.Size();
+
+    if (center.y > 0.38f) {
+        return RobonautDanceRole::Head;
+    }
+    if (center.y < -0.34f && center.x < -0.02f) {
+        return RobonautDanceRole::LeftAnkle;
+    }
+    if (center.y < -0.34f && center.x > 0.02f) {
+        return RobonautDanceRole::RightAnkle;
+    }
+    if (center.y < 0.04f) {
+        return RobonautDanceRole::LowerBody;
+    }
+    if (std::abs(center.x) > 0.22f && center.y > 0.15f) {
+        return center.x < 0.0f ? RobonautDanceRole::LeftArm
+                               : RobonautDanceRole::RightArm;
+    }
+    if (Contains(part.material_name, "Arm") && size.x < 0.36f) {
+        return center.x < 0.0f ? RobonautDanceRole::LeftArm
+                               : RobonautDanceRole::RightArm;
+    }
+    return RobonautDanceRole::UpperBody;
+}
+
+void AddRobonautPartToDanceNode(RobonautDanceNodes& nodes, ModelMesh part) {
+    const RobonautDanceTarget target =
+        NodeForRole(nodes, ClassifyRobonautPart(part));
+    if (target.node == nullptr) {
+        return;
+    }
+    target.node->NewChild("part")
+        .at({-target.pivot.x, -target.pivot.y, -target.pivot.z})
+        .draw_as(std::move(part.mesh), part.material);
+}
+
 }  // namespace
 
-std::unique_ptr<SceneNode> BuildAiCharacters(std::vector<ModelMesh> robonaut,
-                                             std::vector<ModelMesh> ingenuity,
-                                             const TextureSet& tex) {
+SceneNode& BuildAiCharacters(SceneNode& parent, std::vector<ModelMesh> robonaut,
+                             std::vector<ModelMesh> ingenuity,
+                             const TextureSet& tex) {
     (void)tex;
-    auto root = std::make_unique<SceneNode>("ai_characters");
+    auto& root = parent.NewChild("ai_characters");
 
     // ── ROBONAUT 2 (standing beside the table)
     // ──────────────────────────────── Model spans Y: -0.50..+0.50
     // (normalised). Scale 1.7 → ~1.7 m tall. Translate up by scale*0.5 = 0.85
     // so feet sit at y=0.
     if (!robonaut.empty()) {
-        auto& rb = root->NewChild(names::kRobonaut)
+        auto& rb = root.NewChild(names::kRobonaut)
                        .at({2.40f, 0.85f, 0.50f})
                        .scaled({1.7f, 1.7f, 1.7f})
                        .rot_y(-150.0f);
+        RobonautDanceNodes dance_nodes = AddRobonautDancePivots(rb);
         for (auto& mm : robonaut) {
             ApplyRobonautLakersPalette(mm.material, mm.material_name);
-            rb.NewChild("part").draw_as(std::move(mm.mesh), mm.material);
+            AddRobonautPartToDanceNode(dance_nodes, std::move(mm));
         }
     }
 
     // ── INGENUITY (initial orbit position near the Prediction Core)
     // ───────────
     if (!ingenuity.empty()) {
-        auto& ing = root->NewChild(names::kIngenuity)
+        auto& ing = root.NewChild(names::kIngenuity)
                         .at({1.6f, 3.8f, -1.5f})
                         .scaled({0.55f, 0.55f, 0.55f})
                         .rot_y(20.0f);

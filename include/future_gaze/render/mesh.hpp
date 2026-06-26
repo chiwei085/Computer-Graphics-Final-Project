@@ -15,6 +15,21 @@ struct Vertex
     std::array<float, 2> texcoord{};
 };
 
+struct MeshBounds
+{
+    Vec3 min;
+    Vec3 max;
+
+    [[nodiscard]] Vec3 Center() const {
+        return {(min.x + max.x) * 0.5f, (min.y + max.y) * 0.5f,
+                (min.z + max.z) * 0.5f};
+    }
+
+    [[nodiscard]] Vec3 Size() const {
+        return {max.x - min.x, max.y - min.y, max.z - min.z};
+    }
+};
+
 class Mesh
 {
 public:
@@ -36,6 +51,7 @@ public:
     static Mesh Ring(float inner_radius, float outer_radius, float thickness,
                      int segments = 20, float uv_repeat = 1.0f);
 
+    [[nodiscard]] MeshBounds Bounds() const;
     void Draw() const;
 
 private:

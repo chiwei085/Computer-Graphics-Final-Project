@@ -2,9 +2,11 @@
 
 #include <GL/freeglut.h>
 
+#include <algorithm>
 #include <array>
 #include <cassert>
 #include <cmath>
+#include <limits>
 #include <numbers>
 #include <span>
 #include <utility>
@@ -33,6 +35,23 @@ void AddFace(std::vector<Vertex>& vertices, std::span<const Vec3, 4> corners,
 }  // namespace
 
 Mesh::Mesh(std::vector<Vertex> vertices) : vertices_(std::move(vertices)) {}
+
+MeshBounds Mesh::Bounds() const {
+    if (vertices_.empty()) {
+        return {};
+    }
+    const float inf = std::numeric_limits<float>::infinity();
+    MeshBounds bounds{{inf, inf, inf}, {-inf, -inf, -inf}};
+    for (const Vertex& vertex : vertices_) {
+        bounds.min.x = std::min(bounds.min.x, vertex.position.x);
+        bounds.min.y = std::min(bounds.min.y, vertex.position.y);
+        bounds.min.z = std::min(bounds.min.z, vertex.position.z);
+        bounds.max.x = std::max(bounds.max.x, vertex.position.x);
+        bounds.max.y = std::max(bounds.max.y, vertex.position.y);
+        bounds.max.z = std::max(bounds.max.z, vertex.position.z);
+    }
+    return bounds;
+}
 
 Mesh Mesh::Cube() {
     Mesh mesh;

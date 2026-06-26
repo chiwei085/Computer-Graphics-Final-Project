@@ -6,63 +6,62 @@
 #include <utility>
 #include <vector>
 
-#include "future_gaze/math/vec3.hpp"
 #include "future_gaze/render/renderable.hpp"
-#include "future_gaze/render/texture.hpp"
+#include "future_gaze/scene/tf_tree.hpp"
 
 namespace future_gaze
 {
 
+class SceneGraph;
+
 class SceneNode
 {
 public:
-    explicit SceneNode(std::string name = {});
-
-    // Local-space transform (applied order: Ry → Rx → Rz)
-    Vec3 position{};
-    Vec3 euler_deg{};
-    Vec3 scale{1.0f, 1.0f, 1.0f};
-
-    // Optional geometry + material bound as one unit
-    std::optional<Renderable> renderable;
-
-    // ── Tree ─────────────────────────────────────────────────────────────────
-    SceneNode* AddChild(std::unique_ptr<SceneNode> child);
     SceneNode& NewChild(std::string name = {});
 
     // ── Fluent setters (return *this for chaining)
     // ────────────────────────────
     SceneNode& at(Vec3 pos) {
-        position = pos;
+        Transform local = Local();
+        local.position = pos;
+        SetLocal(local);
         return *this;
     }
     SceneNode& rot_y(float deg) {
-        euler_deg.y = deg;
+        Transform local = Local();
+        local.euler_deg.y = deg;
+        SetLocal(local);
         return *this;
     }
     SceneNode& rot_x(float deg) {
-        euler_deg.x = deg;
+        Transform local = Local();
+        local.euler_deg.x = deg;
+        SetLocal(local);
         return *this;
     }
     SceneNode& rot_z(float deg) {
-        euler_deg.z = deg;
+        Transform local = Local();
+        local.euler_deg.z = deg;
+        SetLocal(local);
         return *this;
     }
     SceneNode& scaled(Vec3 s) {
-        scale = s;
+        Transform local = Local();
+        local.scale = s;
+        SetLocal(local);
         return *this;
     }
     SceneNode& draw_as(Mesh m, Material mat) {
-        renderable.emplace(Renderable{std::move(m), std::move(mat)});
+        renderable_.emplace(Renderable{std::move(m), std::move(mat)});
         return *this;
     }
     SceneNode& draw_as(Mesh m, Material mat, const Texture* tex) {
-        renderable.emplace(Renderable{std::move(m), std::move(mat), tex});
+        renderable_.emplace(Renderable{std::move(m), std::move(mat), tex});
         return *this;
     }
     // Unlit additive halo (fake emissive glow, no shader). See Renderable.
     SceneNode& draw_glow(Mesh m, Material mat) {
-        renderable.emplace(
+        renderable_.emplace(
             Renderable{std::move(m), std::move(mat), nullptr, true});
         return *this;
     }
@@ -71,20 +70,19 @@ public:
     void Draw() const;
     void DrawShadow(float min_world_y, float max_world_y) const;
 
-    [[nodiscard]] const std::string& name() const noexcept { return name_; }
-
-    // First descendant (DFS, self included) whose name equals `name`, or null.
-    [[nodiscard]] SceneNode* Find(const std::string& name);
-
-    // Appends every descendant (DFS, self included) whose name starts with
-    // `prefix` to `out`. Used to gather animation targets in scene order.
-    void Collect(const std::string& prefix, std::vector<SceneNode*>& out);
+    [[nodiscard]] const std::string& name() const;
+    [[nodiscard]] TfHandle handle() const noexcept { return handle_; }
+    [[nodiscard]] Transform Local() const;
+    void SetLocal(Transform local);
 
 private:
-    void DrawShadow(float min_world_y, float max_world_y,
-                    float parent_world_y) const;
+    friend class SceneGraph;
 
-    std::string name_;
+    SceneNode(SceneGraph& graph, TfHandle handle);
+
+    SceneGraph* graph_ = nullptr;
+    TfHandle handle_{};
+    std::optional<Renderable> renderable_;
     std::vector<std::unique_ptr<SceneNode>> children_;
 };
 

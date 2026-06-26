@@ -25,9 +25,13 @@ add_executable(future_gaze
     src/render/obj_loader.cpp
     src/render/renderer.cpp
     src/render/texture.cpp
+    src/scene/scene_graph.cpp
     src/scene/scene_node.cpp
+    src/scene/tf_tree.cpp
     src/scene/scene_animation.cpp
     src/scene/dinner_table.cpp
+    src/scene/gaze_controller.cpp
+    src/scene/story_props.cpp
     src/scene/prediction_core.cpp
     src/scene/ai_characters.cpp
 )

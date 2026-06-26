@@ -3,62 +3,36 @@
 #include <GL/freeglut.h>
 
 #include "future_gaze/render/scoped_gl.hpp"
+#include "future_gaze/scene/scene_graph.hpp"
 
 namespace future_gaze
 {
 
-SceneNode::SceneNode(std::string name) : name_(std::move(name)) {}
-
-SceneNode* SceneNode::AddChild(std::unique_ptr<SceneNode> child) {
-    children_.push_back(std::move(child));
-    return children_.back().get();
-}
+SceneNode::SceneNode(SceneGraph& graph, TfHandle handle)
+    : graph_(&graph), handle_(handle) {}
 
 SceneNode& SceneNode::NewChild(std::string name) {
-    return *AddChild(std::make_unique<SceneNode>(std::move(name)));
+    return graph_->NewChild(*this, std::move(name));
 }
 
-SceneNode* SceneNode::Find(const std::string& name) {
-    if (name_ == name) {
-        return this;
-    }
-    for (const auto& child : children_) {
-        if (SceneNode* hit = child->Find(name)) {
-            return hit;
-        }
-    }
-    return nullptr;
+const std::string& SceneNode::name() const {
+    return graph_->tf().Name(handle_);
 }
 
-void SceneNode::Collect(const std::string& prefix,
-                        std::vector<SceneNode*>& out) {
-    if (name_.rfind(prefix, 0) == 0) {
-        out.push_back(this);
-    }
-    for (const auto& child : children_) {
-        child->Collect(prefix, out);
-    }
+Transform SceneNode::Local() const {
+    return graph_->tf().Local(handle_);
+}
+
+void SceneNode::SetLocal(Transform local) {
+    graph_->tf().SetLocal(handle_, local);
 }
 
 void SceneNode::Draw() const {
     const ScopedMatrixPush push;
+    glMultMatrixf(graph_->tf().LocalMatrix(handle_).Data());
 
-    glTranslatef(position.x, position.y, position.z);
-    if (euler_deg.y != 0.0f) {
-        glRotatef(euler_deg.y, 0.0f, 1.0f, 0.0f);
-    }
-    if (euler_deg.x != 0.0f) {
-        glRotatef(euler_deg.x, 1.0f, 0.0f, 0.0f);
-    }
-    if (euler_deg.z != 0.0f) {
-        glRotatef(euler_deg.z, 0.0f, 0.0f, 1.0f);
-    }
-    if (scale.x != 1.0f || scale.y != 1.0f || scale.z != 1.0f) {
-        glScalef(scale.x, scale.y, scale.z);
-    }
-
-    if (renderable.has_value()) {
-        renderable->Draw();
+    if (renderable_.has_value()) {
+        renderable_->Draw();
     }
 
     for (const auto& child : children_) {
@@ -67,35 +41,17 @@ void SceneNode::Draw() const {
 }
 
 void SceneNode::DrawShadow(float min_world_y, float max_world_y) const {
-    DrawShadow(min_world_y, max_world_y, 0.0f);
-}
-
-void SceneNode::DrawShadow(float min_world_y, float max_world_y,
-                           float parent_world_y) const {
-    const float world_y = parent_world_y + position.y;
+    const float world_y = graph_->tf().WorldPosition(handle_).y;
     const ScopedMatrixPush push;
+    glMultMatrixf(graph_->tf().LocalMatrix(handle_).Data());
 
-    glTranslatef(position.x, position.y, position.z);
-    if (euler_deg.y != 0.0f) {
-        glRotatef(euler_deg.y, 0.0f, 1.0f, 0.0f);
-    }
-    if (euler_deg.x != 0.0f) {
-        glRotatef(euler_deg.x, 1.0f, 0.0f, 0.0f);
-    }
-    if (euler_deg.z != 0.0f) {
-        glRotatef(euler_deg.z, 0.0f, 0.0f, 1.0f);
-    }
-    if (scale.x != 1.0f || scale.y != 1.0f || scale.z != 1.0f) {
-        glScalef(scale.x, scale.y, scale.z);
-    }
-
-    if (renderable.has_value() && world_y >= min_world_y &&
+    if (renderable_.has_value() && world_y >= min_world_y &&
         world_y <= max_world_y) {
-        renderable->DrawShadow();
+        renderable_->DrawShadow();
     }
 
     for (const auto& child : children_) {
-        child->DrawShadow(min_world_y, max_world_y, world_y);
+        child->DrawShadow(min_world_y, max_world_y);
     }
 }
 
