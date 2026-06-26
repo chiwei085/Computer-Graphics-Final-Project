@@ -649,15 +649,10 @@ void AddBlindCompleteWorld(SceneNode& root, StoryPropAssets& assets) {
         .draw_as(Mesh::Cube(), muted_metal);
 }
 
-// ─── Future sci-fi backdrop shell
-// ───────────────────────────────────────────── fgbg_* nodes: revealed with
-// FutureWeight. Large room fills the void above and around the existing
-// platform/column set.
 void AddFutureBgShell(SceneNode& root) {
     const RoomBounds room = DefaultRoomBounds();
     const Aabb3 b = room.interior;
     const float t = room.wall_thickness;
-    // Hull: medium-dark steel-blue — visible in the moody sci-fi lighting.
     const Material hull({0.018f, 0.030f, 0.048f, 1.0f},
                         {0.10f, 0.17f, 0.26f, 1.0f},
                         {0.40f, 0.60f, 0.75f, 1.0f}, 72.0f);
@@ -668,15 +663,9 @@ void AddFutureBgShell(SceneNode& root) {
                               {0.042f, 0.072f, 0.108f, 1.0f},
                               {0.14f, 0.24f, 0.36f, 1.0f}, 32.0f);
 
-    // ── fgbg_main_0: outer shell — walls behind the eye (z > 0.5),
-    //   ceiling spans far overhead, floor covers the full area.
     {
         auto& s = root.NewChild("fgbg_main_0").at({0.0f, 0.0f, 0.0f});
 
-        // ── Far wall: derived from RoomBounds on the negative-Z side, behind
-        // the Prediction Core from the default spectator camera. Keeping this
-        // wall on the actual far side prevents it from becoming a legal-but-
-        // unusable foreground occluder when the camera solver frames the eye.
         s.NewChild("back_wall")
             .at({0.0f, (b.min.y + b.max.y) * 0.5f, b.min.z - t * 0.5f})
             .scaled({b.Size().x, b.Size().y, t})
@@ -699,7 +688,6 @@ void AddFutureBgShell(SceneNode& root) {
                 .draw_glow(Mesh::Cube(), Material::GlowCyan(0.13f - 0.01f * i));
         }
 
-        // ── Side walls span the full RoomBounds depth.
         s.NewChild("left_wall")
             .at({b.min.x - t * 0.5f, (b.min.y + b.max.y) * 0.5f,
                  (b.min.z + b.max.z) * 0.5f})
@@ -728,8 +716,6 @@ void AddFutureBgShell(SceneNode& root) {
                 .draw_glow(Mesh::Cube(), Material::GlowCyan(0.15f));
         }
 
-        // ── Ceiling and floor share RoomBounds, so camera clearance is
-        // mathematically tied to the rendered shell.
         s.NewChild("ceiling")
             .at({0.0f, b.max.y + t * 0.5f, (b.min.z + b.max.z) * 0.5f})
             .scaled({b.Size().x, t, b.Size().z})
@@ -774,7 +760,6 @@ void AddFutureBgShell(SceneNode& root) {
         }
     }
 
-    // ── fgbg_col_towers_1: tall glowing column array
     {
         auto& s = root.NewChild("fgbg_col_towers_1").at({0.0f, 0.0f, 0.0f});
         constexpr float kCx[6] = {-4.8f, -3.2f, -1.6f, 1.6f, 3.2f, 4.8f};
@@ -793,7 +778,6 @@ void AddFutureBgShell(SceneNode& root) {
                         .draw_glow(Mesh::Disk(0.058f, 10),
                                    Material::GlowCyan(0.30f - 0.025f * r));
                 }
-                // Base platform cap
                 col.NewChild("cap")
                     .at({0.0f, 0.08f, 0.0f})
                     .scaled({0.22f, 0.08f, 0.22f})
@@ -802,17 +786,14 @@ void AddFutureBgShell(SceneNode& root) {
         }
     }
 
-    // ── fgbg_arch_ring_2: overhead scan arches spanning the ceiling
     {
         auto& s = root.NewChild("fgbg_arch_ring_2").at({0.0f, 5.4f, 2.0f});
-        // Large overhead ring
         s.NewChild("ring_outer")
             .scaled({3.8f, 1.0f, 3.8f})
             .draw_glow(Mesh::Disk(1.0f, 48), Material::GlowCyan(0.15f));
         s.NewChild("ring_inner")
             .scaled({2.6f, 1.0f, 2.6f})
             .draw_glow(Mesh::Disk(1.0f, 36), Material::GlowCyan(0.10f));
-        // Cross bars
         s.NewChild("cross_a")
             .scaled({0.012f, 0.012f, 4.0f})
             .draw_glow(Mesh::Cube(), Material::GlowCyan(0.25f));
@@ -830,8 +811,6 @@ void AddFutureBgShell(SceneNode& root) {
             .draw_glow(Mesh::Cube(), Material::GlowCyan(0.18f));
     }
 
-    // ── fgbg_scan_tower_l/r_3/4: bilaterally symmetric scanner towers.
-    // beam_x and beam_yaw_a/b flip sign between left and right.
     auto add_scan_tower = [&](SceneNode& parent, const std::string& name,
                               float x, float beam_x, float yaw_a, float yaw_b) {
         auto& s = parent.NewChild(name).at({x, 0.04f, 1.2f});
@@ -865,14 +844,11 @@ void AddFutureBgShell(SceneNode& root) {
     add_scan_tower(root, "fgbg_scan_tower_l_3", -5.2f, 0.5f, -40.0f, 28.0f);
     add_scan_tower(root, "fgbg_scan_tower_r_4", 5.2f, -0.5f, 40.0f, -28.0f);
 
-    // ── fgbg_upper_band_5: horizontal scan band across mid-height
     {
         auto& s = root.NewChild("fgbg_upper_band_5").at({0.0f, 3.6f, 2.2f});
-        // Floating horizontal bar spanning the full width
         s.NewChild("bar_main")
             .scaled({11.0f, 0.014f, 0.014f})
             .draw_glow(Mesh::Cube(), Material::GlowCyan(0.22f));
-        // Tick marks hanging down from the bar
         for (int i = 0; i < 12; ++i) {
             const float x = -5.0f + 10.0f * static_cast<float>(i) / 11.0f;
             s.NewChild("tick")
@@ -883,13 +859,9 @@ void AddFutureBgShell(SceneNode& root) {
         }
     }
 
-    // ── fgbg_wall_panels_6: inset display panels on the far wall. The z comes
-    // from RoomBounds; old mid-room placement intersected the spectator sight
-    // line and hid the eye/table while still satisfying camera room bounds.
     {
         auto& s = root.NewChild("fgbg_wall_panels_6")
                       .at({0.0f, 0.0f, b.min.z + 0.16f});
-        // Three large display recesses
         for (int i = 0; i < 3; ++i) {
             const float x = -2.8f + 2.8f * i;
             s.NewChild("panel_bg")
@@ -901,7 +873,6 @@ void AddFutureBgShell(SceneNode& root) {
                 .scaled({1.3f, 1.7f, 0.010f})
                 .draw_glow(Mesh::Cube(),
                            Material::GlowCyan(0.16f - 0.03f * std::abs(i - 1)));
-            // Horizontal bars inside panel (like data readouts)
             for (int j = 0; j < 5; ++j) {
                 const float w = 1.0f - 0.12f * j;
                 s.NewChild("data_bar")
@@ -913,10 +884,6 @@ void AddFutureBgShell(SceneNode& root) {
     }
 }
 
-// ─── Memory warm-room backdrop shell
-// ────────────────────────────────────────── mgbg_* nodes: revealed with
-// MemoryWeight. Warm domestic interior wrapping around the existing
-// lamp/curtain/candle set.
 void AddMemoryBgShell(SceneNode& root) {
     const RoomBounds room = DefaultRoomBounds();
     const Aabb3 b = room.interior;
@@ -946,12 +913,9 @@ void AddMemoryBgShell(SceneNode& root) {
                            {0.40f, 0.16f, 0.09f, 1.0f},
                            {0.032f, 0.014f, 0.008f, 1.0f}, 3.0f);
 
-    // ── mgbg_room_shell_0: main room walls + ceiling + floor.
-    //   All shell geometry is derived from RoomBounds.
     {
         auto& s = root.NewChild("mgbg_room_shell_0").at({0.0f, 0.0f, 0.0f});
 
-        // Back wall
         s.NewChild("back_wall")
             .at({0.0f, (b.min.y + b.max.y) * 0.5f, b.max.z + t * 0.5f})
             .rot_y(180.0f)
@@ -978,7 +942,6 @@ void AddMemoryBgShell(SceneNode& root) {
             .scaled({b.Size().x - 0.4f, 0.13f, 0.042f})
             .draw_as(Mesh::Cube(), dark_wood);
 
-        // Left side wall
         s.NewChild("left_wall")
             .at({b.min.x - t * 0.5f, (b.min.y + b.max.y) * 0.5f,
                  (b.min.z + b.max.z) * 0.5f})
@@ -989,7 +952,6 @@ void AddMemoryBgShell(SceneNode& root) {
             .scaled({0.055f, 0.96f, b.Size().z - 0.4f})
             .draw_as(Mesh::Cube(), warm_trim);
 
-        // Right side wall
         s.NewChild("right_wall")
             .at({b.max.x + t * 0.5f, (b.min.y + b.max.y) * 0.5f,
                  (b.min.z + b.max.z) * 0.5f})
@@ -1021,7 +983,6 @@ void AddMemoryBgShell(SceneNode& root) {
             .scaled({1.6f, 1.6f, 1.0f})
             .draw_glow(Mesh::Disk(1.0f, 28), GlowGold(0.16f));
 
-        // Floor + rug
         s.NewChild("floor_ext")
             .at({0.0f, b.min.y - t * 0.5f, (b.min.z + b.max.z) * 0.5f})
             .scaled({b.Size().x, t, b.Size().z})
@@ -1036,8 +997,6 @@ void AddMemoryBgShell(SceneNode& root) {
             .draw_as(Mesh::Cube(), rug_border);
     }
 
-    // ── mgbg_drape_left/right_1/2: bilaterally symmetric curtain clusters.
-    // xi_sign flips fold offsets; glow_fn selects thread/tassel colour.
     auto add_drape_cluster = [&](const std::string& name, float x,
                                  float xi_sign, Material (*glow_fn)(float),
                                  float tassel_x) {
@@ -1067,11 +1026,9 @@ void AddMemoryBgShell(SceneNode& root) {
     add_drape_cluster("mgbg_drape_left_1", -3.8f, 1.0f, GlowGold, 0.22f);
     add_drape_cluster("mgbg_drape_right_2", 3.8f, -1.0f, GlowRose, -0.22f);
 
-    // ── mgbg_wall_art_3: picture frames + wall decorations on back wall
     {
         auto& s = root.NewChild("mgbg_wall_art_3").at({0.0f, 2.8f, 4.90f});
 
-        // Central large painting
         s.NewChild("frame_c")
             .at({0.0f, 0.0f, 0.0f})
             .scaled({1.05f, 0.78f, 0.045f})
@@ -1081,7 +1038,6 @@ void AddMemoryBgShell(SceneNode& root) {
             .scaled({0.88f, 0.62f, 0.010f})
             .draw_as(Mesh::Cube(), WarmCanvas());
 
-        // Left small painting
         s.NewChild("frame_l")
             .at({-2.2f, 0.26f, 0.0f})
             .rot_z(4.0f)
@@ -1093,7 +1049,6 @@ void AddMemoryBgShell(SceneNode& root) {
             .scaled({0.38f, 0.28f, 0.008f})
             .draw_as(Mesh::Cube(), WarmCanvas());
 
-        // Right small painting
         s.NewChild("frame_r")
             .at({2.2f, -0.18f, 0.0f})
             .rot_z(-3.0f)
@@ -1105,7 +1060,6 @@ void AddMemoryBgShell(SceneNode& root) {
             .scaled({0.30f, 0.24f, 0.008f})
             .draw_as(Mesh::Cube(), RoseCanvas());
 
-        // Decorative sconce / wall light — left
         s.NewChild("sconce_l")
             .at({-3.6f, -0.5f, -0.02f})
             .scaled({0.08f, 0.08f, 0.08f})
@@ -1116,10 +1070,8 @@ void AddMemoryBgShell(SceneNode& root) {
             .draw_glow(Mesh::Sphere(1.0f, 10, 7), GlowGold(0.35f));
     }
 
-    // ── mgbg_candle_cluster_4: extra candle groups flanking the table area
     {
         auto& s = root.NewChild("mgbg_candle_cluster_4").at({0.0f, 0.0f, 0.0f});
-        // Left candle group on side table
         const Material side_table({0.058f, 0.034f, 0.022f, 1.0f},
                                   {0.26f, 0.14f, 0.09f, 1.0f},
                                   {0.04f, 0.022f, 0.014f, 1.0f}, 6.0f);
@@ -1145,7 +1097,6 @@ void AddMemoryBgShell(SceneNode& root) {
                 .at({0.22f, 0.28f, 0.15f})
                 .scaled({0.030f, 0.55f, 0.030f})
                 .draw_as(Mesh::Cube(), side_table);
-            // Three candles on side table
             for (int i = 0; i < 3; ++i) {
                 const float xc = -0.10f + 0.10f * i;
                 const float hc = 0.12f + 0.06f * i;
@@ -1159,7 +1110,6 @@ void AddMemoryBgShell(SceneNode& root) {
                     .draw_glow(Mesh::Sphere(1.0f, 8, 5), GlowGold(0.50f));
             }
         }
-        // Right candle group
         {
             auto& ct = s.NewChild("right_side_table").at({3.8f, 0.0f, 2.2f});
             ct.NewChild("tabletop")
@@ -1182,10 +1132,6 @@ void AddMemoryBgShell(SceneNode& root) {
     }
 }
 
-// ─── Expanded Blind zone corridor shell
-// ─────────────────────────────────────── Additional blind_bg_* nodes (slots
-// 7-9) — deep narrow hall, flanking walls, and carpet-shadow field that appear
-// with BlindWeight.
 void AddBlindBgExpansion(SceneNode& root) {
     const RoomBounds room = DefaultRoomBounds();
     const Aabb3 b = room.interior;
@@ -1208,22 +1154,15 @@ void AddBlindBgExpansion(SceneNode& root) {
                             {0.002f, 0.002f, 0.002f, 1.0f},
                             {0.0f, 0.0f, 0.0f, 1.0f}, 1.0f);
 
-    // ── blind_bg_side_hall_7: flanking side shell derived from RoomBounds.
-    // This used to be a hand-authored low corridor through the middle of the
-    // room; from several gaze-follow poses its ceiling slab sat between the
-    // camera and table. Keep the blind-zone shell at the room perimeter
-    // instead.
     {
         auto& s = root.NewChild("blind_bg_side_hall_7").at({0.0f, 0.0f, 0.0f});
         const float shell_z = (b.min.z + b.max.z) * 0.5f;
         const float shell_h = b.Size().y;
 
-        // Left flanking wall
         s.NewChild("left_wall")
             .at({b.min.x + 0.30f, shell_h * 0.5f, shell_z})
             .scaled({0.045f, shell_h, b.Size().z})
             .draw_as(Mesh::Cube(), wall);
-        // Crack marks left wall
         s.NewChild("crack_l_a")
             .at({-1.97f, 0.68f, -0.9f})
             .rot_z(22.0f)
@@ -1245,7 +1184,6 @@ void AddBlindBgExpansion(SceneNode& root) {
             .scaled({0.005f, 0.18f, 0.006f})
             .draw_as(Mesh::Cube(), shadow);
 
-        // Right flanking wall
         s.NewChild("right_wall")
             .at({b.max.x - 0.30f, shell_h * 0.5f, shell_z})
             .scaled({0.045f, shell_h, b.Size().z})
@@ -1266,9 +1204,7 @@ void AddBlindBgExpansion(SceneNode& root) {
             .scaled({0.005f, 0.20f, 0.007f})
             .draw_as(Mesh::Cube(), shadow);
 
-        // No full floor/ceiling slabs here. The renderer already owns the
-        // ground receiver, and full blind slabs can dominate the depth buffer
-        // from gaze-follow angles. Use thin perimeter rails for enclosure cues.
+        // Full slabs would dominate the depth buffer from gaze-follow angles.
         s.NewChild("left_floor_rail")
             .at({b.min.x + 0.55f, 0.06f, shell_z})
             .scaled({0.10f, 0.045f, b.Size().z})
@@ -1287,12 +1223,10 @@ void AddBlindBgExpansion(SceneNode& root) {
             .draw_as(Mesh::Cube(), wall);
     }
 
-    // ── blind_bg_deep_frames_8: receding doorframe layers creating depth
     {
         auto& s =
             root.NewChild("blind_bg_deep_frames_8").at({0.0f, 0.0f, 4.8f});
 
-        // Three progressively smaller doorframe layers
         for (int i = 0; i < 4; ++i) {
             const float z_off = 0.7f * i;
             const float sc = 1.0f - 0.18f * i;
@@ -1310,18 +1244,15 @@ void AddBlindBgExpansion(SceneNode& root) {
                 .draw_as(Mesh::Cube(), edge);
         }
 
-        // Floor at this depth
         s.NewChild("floor")
             .at({0.0f, 0.012f, 1.0f})
             .scaled({1.8f, 0.012f, 3.2f})
             .draw_as(Mesh::Cube(), floor);
 
-        // Back dead-end wall
         s.NewChild("dead_end")
             .at({0.0f, 0.92f, 2.6f})
             .scaled({0.94f, 1.72f, 0.055f})
             .draw_as(Mesh::Cube(), cracked);
-        // Large shadow cast on the dead-end wall
         s.NewChild("wall_shadow")
             .at({-0.18f, 0.76f, 2.55f})
             .rot_y(8.0f)
@@ -1348,7 +1279,6 @@ void AddBlindBgExpansion(SceneNode& root) {
             .draw_as(Mesh::Cube(), edge);
     }
 
-    // ── blind_bg_shadow_field_9: diagonal long shadows on the floor
     {
         auto& s =
             root.NewChild("blind_bg_shadow_field_9").at({0.0f, 0.032f, 3.2f});

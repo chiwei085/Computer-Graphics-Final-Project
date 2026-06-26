@@ -14,15 +14,8 @@ namespace future_gaze
 
 class SceneGraph;
 
-// Wires the procedural scene graph to the Animator:
-//   Self-rotation  — green iris circuit ring spins in its own plane
-//   Orbit          — Ingenuity rides a sin/cos orbit around the eye
-//   Future bloom   — wine-glass "future-state" slices bloom open
-//   Memory unfold  — chair memory panels unfold (keyframed) toward a diner
-//   Gaze tracking  — Robonaut smoothly turns to track the orbiting drone
-//
-// Bind() is called once after the scene graph is built; Update() runs per
-// frame.
+// Drives per-frame animation channels: iris spin, Ingenuity orbit, gaze-driven
+// fragment bloom/collapse, Robonaut patrol and gaze tracking.
 class SceneAnimation
 {
 public:
@@ -94,7 +87,6 @@ private:
     const GazeController* gaze_ = nullptr;
     physics::PhysicsWorld physics_;
 
-    // Dinner scene root — rotates with camera yaw; needed for collision frame.
     TfHandle table_root_{};
     TfHandle props_root_{};
     Vec3 last_table_pos_{1.0e30f, 1.0e30f, 1.0e30f};
@@ -102,23 +94,20 @@ private:
     float last_table_yaw_ = 1.0e30f;
     float last_props_yaw_ = 1.0e30f;
 
-    // Self-rotating iris ring + the eye it lives on.
     TfHandle circuit_ring_{};
 
-    // Orbiting drone + the character that tracks it.
     TfHandle ingenuity_{};
     TfHandle robonaut_{};
-    Vec3 eye_center_;                // world-space orbit centre
-    float robonaut_yaw_vel_ = 0.0f;  // SmoothDamp state
-    Vec3 ingenuity_world_;           // updated each frame for the tracker
+    Vec3 eye_center_;
+    float robonaut_yaw_vel_ = 0.0f;  // SmoothDamp state for yaw tracking
+    Vec3 ingenuity_world_;
     Vec3 robonaut_rest_position_;
     Vec3 robonaut_rest_euler_;
-    Vec3 robonaut_phys_pos_{};  // physics-integrated XZ patrol position
-    Vec3 robonaut_phys_vel_{};  // XZ velocity for spring + bounce simulation
+    Vec3 robonaut_phys_pos_{};
+    Vec3 robonaut_phys_vel_{};
     physics::BodyId robonaut_body_{};
     physics::BodyId ingenuity_body_{};
 
-    // Gaze-driven representative fragments.
     std::vector<FutureRest> future_fragments_;
     std::vector<MemoryRest> memory_fragments_;
     std::vector<BlindRest> blind_backdrop_;
@@ -126,7 +115,7 @@ private:
     std::vector<BlindRest> memory_backdrop_;
     std::vector<DanceRest> robonaut_dance_joints_;
     std::vector<StaticPhysicsBinding> static_physics_;
-    KeyTrack unfold_;  // shared keyframed open/close curve for the panels
+    KeyTrack unfold_;
 
     void BuildChannels();
     void BindRobonautDance(SceneGraph& graph);

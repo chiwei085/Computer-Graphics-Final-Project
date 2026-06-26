@@ -9,11 +9,7 @@
 namespace future_gaze
 {
 
-// ── Keyframe track
-// ──────────────────────────────────────────────────────────── A piecewise
-// curve sampled at an arbitrary time with a per-segment easing function. This
-// is the "keyframe" half of the animation system; parametric channels (sin/cos,
-// smooth-follow) are the other half.
+// Piecewise keyframe curve sampled at arbitrary time with per-segment easing.
 class KeyTrack
 {
 public:
@@ -21,10 +17,9 @@ public:
 
     struct Key
     {
-        float time = 0.0f;               // seconds
-        float value = 0.0f;              // sampled value at this key
-        Easing ease = ease::SmoothStep;  // applied across the segment that ENDS
-                                         // at this key
+        float time = 0.0f;
+        float value = 0.0f;
+        Easing ease = ease::SmoothStep;  // applied to the segment ending at this key
     };
 
     KeyTrack& Add(float time, float value, Easing ease = ease::SmoothStep) {
@@ -63,11 +58,7 @@ private:
     std::vector<Key> keys_;
 };
 
-// ── Animator
-// ────────────────────────────────────────────────────────────────── Owns the
-// master clock (the "timeline") and a set of named update channels. Each
-// channel is a closure invoked every frame with the absolute clock time and the
-// frame delta, so it can drive any number of scene nodes at once.
+// Owns a master clock and named per-frame update channels.
 class Animator
 {
 public:

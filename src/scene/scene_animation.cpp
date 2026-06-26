@@ -37,9 +37,7 @@ constexpr physics::CollisionMask kFragmentMask{kPhysicsFragment,
 constexpr physics::CollisionMask kEyeSafetyMask{kPhysicsEyeSafety,
                                                 kPhysicsAerial};
 
-// Binding is name-based, so a missing target is silent until something visibly
-// fails to move. These helpers turn that into a loud one-line warning at
-// startup (captured on stderr) instead of a no-op channel.
+// Name-based binding is silent on missing nodes; warn loudly at startup instead.
 TfHandle FindOrWarn(SceneGraph& graph, const char* name) {
     const TfHandle handle = graph.Find(name);
     if (!handle.IsValid()) {
@@ -116,7 +114,6 @@ void SceneAnimation::Bind(SceneGraph& graph, const GazeController& gaze) {
     tf_ = &graph.tf();
     gaze_ = &gaze;
 
-    // ── Resolve animation targets ────────────────────────────────────────────
     table_root_ = FindOrWarn(graph, "dinner_scene");
     props_root_ = FindOrWarn(graph, "story_props");
     circuit_ring_ = FindOrWarn(graph, names::kCircuitRing);
@@ -132,7 +129,6 @@ void SceneAnimation::Bind(SceneGraph& graph, const GazeController& gaze) {
     eye_center_ = gaze.Origin();
     BindRobonautDance(graph);
 
-    // Gather authored story fragments and snapshot their fully-open rest pose.
     for (TfHandle n : CollectOrWarn(graph, names::kFuturePrefix)) {
         const std::string& name = tf_->Name(n);
         FutureRest r;
@@ -191,7 +187,6 @@ void SceneAnimation::Bind(SceneGraph& graph, const GazeController& gaze) {
     collect_backdrop("fgbg_", future_backdrop_);
     collect_backdrop("mgbg_", memory_backdrop_);
 
-    // Shared keyframed unfold curve: closed → spring open → hold → close.
     unfold_.Add(0.0f, 0.0f, ease::SmootherStep)
         .Add(1.4f, 1.0f, ease::OutBackEase)
         .Add(4.6f, 1.0f, ease::SmoothStep)
@@ -226,11 +221,7 @@ void SceneAnimation::BuildPhysicsWorld() {
                         height);
     };
 
-    // Dinner table blockers, authored in dinner_scene local space. Mesh::Cube
-    // spans [-1, 1], so the tabletop's visual half-extents match the scale
-    // used in BuildDinnerTable ({2.1, 0.04, 0.95}). Keeping physics at the same
-    // footprint prevents the Robonaut from walking into the rendered top while
-    // the collision world still thinks it is outside.
+    // Table and chair blockers authored in dinner_scene local space.
     add_table_static(physics::Collider2D::Box(2.10f, 0.95f), {}, 0.0f,
                      {0.70f, 0.86f});
     for (const Vec3 p : {Vec3{-1.98f, 0.0f, -0.88f}, Vec3{1.98f, 0.0f, -0.88f},
@@ -262,7 +253,6 @@ void SceneAnimation::BuildPhysicsWorld() {
                          {0.45f, 1.02f});
     }
 
-    // Background set dressing, authored in story_props local space.
     add_story_static(physics::Collider2D::Box(0.72f, 0.18f),
                      {2.62f, 0.0f, -1.92f}, 160.0f, {0.0f, 1.95f});
     add_story_static(physics::Collider2D::Box(1.35f, 0.40f),
@@ -408,11 +398,7 @@ void SceneAnimation::SyncFragmentSensor(physics::BodyId body, TfHandle handle) {
 }
 
 void SceneAnimation::BuildChannels() {
-    // ── Self-rotation
-    // ───────────────────────────────────────────────────────── Only the green
-    // circuit ring spins, in its own plane (rot_y about its normal — see
-    // prediction_core's circuit_tilt/circuit_ring split), so it never tumbles
-    // into the sclera. The dark iris frame stays put.
+    // Circuit ring spins in-plane via the circuit_tilt/circuit_ring split.
     animator_.Add("self_rotation", [this](float t, float) {
         if (tf_ != nullptr && tf_->Contains(circuit_ring_)) {
             Transform local = tf_->Local(circuit_ring_);
@@ -421,19 +407,11 @@ void SceneAnimation::BuildChannels() {
         }
     });
 
-    // ── Orbit motion
-    // ────────────────────────────────────────────────────────── Ingenuity
-    // rides a cosine/sine orbit around the eye with a vertical bob and banks
-    // into the turn. Also publishes its world position for the tracker.
+    // Ingenuity orbits the eye; world position is published for the tracker.
+    // kRadius=3.0 clears the cable bundle (~2.10) plus drone half-extent (~0.4).
     animator_.Add("orbit_drone", [this](float t, float) {
-        // Must clear the eye's full extent in EVERY yaw/pitch pose, not just
-        // the 1.2 sclera: the cable bundle reaches ~2.10 and the cyan glow ~2.0
-        // from the centre, and they sweep around as the user rotates the gaze.
-        // With the drone's ~0.4 half-extent, 2.35 left only a ~0.25 gap → the
-        // drone clipped through the cables. 3.0 clears cables+drone with
-        // margin.
         constexpr float kRadius = 3.0f;
-        constexpr float kOmega = 0.55f;  // rad/s
+        constexpr float kOmega = 0.55f;
         const float a = t * kOmega;
         const float bob = 0.40f * std::sin(a * 2.0f);
         ingenuity_world_ = {eye_center_.x + kRadius * std::cos(a),
@@ -444,7 +422,6 @@ void SceneAnimation::BuildChannels() {
         if (tf_ != nullptr && tf_->Contains(ingenuity_)) {
             Transform local = tf_->Local(ingenuity_);
             local.position = ingenuity_world_;
-            // Face along the tangent (heading) and bank with the bob.
             local.euler_deg.y = -a * kRadToDeg + 90.0f;
             local.euler_deg.z = 14.0f * std::cos(a * 2.0f);
             local.euler_deg.x = 6.0f * std::sin(a * 2.0f);
@@ -452,10 +429,7 @@ void SceneAnimation::BuildChannels() {
         }
     });
 
-    // ── Future-state fragments
-    // ───────────────────────────────────────────── Results invade causes only
-    // where the Prediction Core looks. Slices, stains and shards all share the
-    // same gaze weight but reveal with different geometry grammar.
+    // Future gaze: bloom fragments across all target positions.
     animator_.Add("gaze_future", [this](float t, float) {
         for (const FutureRest& r : future_fragments_) {
             const float w = FutureWeight();
@@ -530,11 +504,7 @@ void SceneAnimation::BuildChannels() {
         }
     });
 
-    // ── Longing/private fronts
-    // ───────────────────────────────────────────── Memory fragments open only
-    // toward the viewer relationship selected by the eye. From the front they
-    // read as figures, forts and argument slashes; from the side they remain
-    // thin confusing plates.
+    // Longing gaze: open memory fragments toward the current diner position.
     animator_.Add("gaze_memory", [this](float t, float) {
         for (const MemoryRest& r : memory_fragments_) {
             const float w = MemoryWeight();
@@ -600,10 +570,6 @@ void SceneAnimation::BuildChannels() {
         }
     });
 
-    // ── Blindspot / Future / Memory backdrop channels
-    // Each backdrop animates in when its zone is active: scale from 4% → 100%
-    // and rises into position. Blind zone is default-on (BlindWeight
-    // returns 1.0 when gaze is absent); Future and Memory default to 0.
     auto add_backdrop_channel =
         [this](const char* name, float (SceneAnimation::*weight_fn)() const,
                std::vector<BlindRest>* backdrop, float rise, float slot_coeff) {
@@ -628,10 +594,7 @@ void SceneAnimation::BuildChannels() {
     add_backdrop_channel("gaze_memory_backdrop", &SceneAnimation::MemoryWeight,
                          &memory_backdrop_, 0.40f, 0.030f);
 
-    // ── Patrol + collision physics
-    // ──────────────────────────────────────── Spring-mass-damper (ζ ≈ 0.71)
-    // follows an elliptical perimeter; the new physics world owns the actual
-    // swept movement so frame spikes cannot jump through table/chair blockers.
+    // Robonaut patrols an ellipse via spring-damper; physics prevents tunneling.
     animator_.Add("robonaut_patrol", [this](float t, float dt) {
         constexpr float kRx = 3.05f;
         constexpr float kRz = 1.95f;
@@ -646,8 +609,6 @@ void SceneAnimation::BuildChannels() {
         }
         const float safe_dt = std::max(dt, 0.0001f);
 
-        // ── Spring toward world-space patrol target
-        // ───────────────────────────
         const float ta = t * kOmega;
         const float tx = kRx * std::cos(ta);
         const float tz = kCz + kRz * std::sin(ta);
@@ -682,18 +643,13 @@ void SceneAnimation::BuildChannels() {
         robonaut_rest_position_.z = robonaut_phys_pos_.z;
     });
 
-    // ── Gaze tracking
-    // ───────────────────────────────────────────────────────── Robonaut
-    // smoothly (critically damped) turns to face the orbiting drone. Runs after
-    // orbit_drone so it reads the drone's freshly-updated position.
+    // Robonaut turns toward the drone; runs after orbit_drone updates position.
     animator_.Add("robonaut_track", [this](float, float dt) {
         if (tf_ == nullptr || !tf_->Contains(robonaut_)) {
             return;
         }
         Transform local = tf_->Local(robonaut_);
         const Vec3 to = ingenuity_world_ - local.position;
-        // Model forward is offset by its rest yaw; aim that forward at the
-        // drone.
         const float target_yaw = std::atan2(to.x, to.z) * kRadToDeg + 180.0f;
         local.euler_deg.y = ease::SmoothDampAngleDeg(
             local.euler_deg.y, target_yaw, robonaut_yaw_vel_, 0.7f,
@@ -702,10 +658,6 @@ void SceneAnimation::BuildChannels() {
     });
 
     animator_.Add("robonaut_procedural_dance", [this](float t, float) {
-        // All geometry lives on the Center node (OBJ has no joint rigging).
-        // Only Centre and Head pivots carry meshes; all other pivot nodes are
-        // empty. Animating them would corrupt the head's compound rotation.
-        // Motion design: sentinel-stance weight shift + head scan.
         const float beat = t * kDanceBeat;
         const float bounce = 0.5f + 0.5f * std::sin(beat * 2.0f);
         if (tf_ != nullptr && tf_->Contains(robonaut_)) {
@@ -724,19 +676,13 @@ void SceneAnimation::BuildChannels() {
             Vec3 euler{};
             Vec3 offset{};
             if (joint.role == "center") {
-                // Gentle sentinel sway — amplitude kept small so the rigid
-                // mesh reads as balanced, not flailing.
                 offset = {0.0f, 0.018f * std::abs(Wave(t)), 0.0f};
                 euler = {2.5f * Wave(t, 0.8f), 0.0f, 3.5f * Wave(t)};
             }
             else if (joint.role == "head") {
-                // Neck ring is a single-DOF pitch joint: nod only.
-                // Yaw is handled by the whole-body robonaut_track channel;
-                // roll is not mechanically possible on this design.
+                // Head is a single-DOF pitch joint; yaw is handled by robonaut_track.
                 euler = {10.0f * Wave(t, 1.5f), 0.0f, 0.0f};
             }
-            // All other pivot nodes (upper_body, lower_body, arms, legs, …)
-            // hold their rest pose; their euler stays {0,0,0}.
             Transform local = joint.local;
             local.position = joint.local.position + offset;
             local.euler_deg = joint.local.euler_deg + euler;
@@ -789,12 +735,6 @@ void SceneAnimation::BindRobonautDance(SceneGraph& graph) {
     add(names::kRobonautDanceRightAnkle, "right_ankle");
 }
 
-// Gating is now per gaze ZONE, not per spatial target: rotating the eye into
-// the Foresight (預見) sector blooms *every* future fragment across the whole
-// table at once, and likewise Longing (眷戀) for memory fragments. The `target`
-// only still seeds per-anchor phase variety in the channels above; it no longer
-// decides whether a fragment is active. In the Blindspot (盲點) sector both
-// weights fall to ~0, so the table collapses back to plain objects + blind kit.
 float SceneAnimation::FutureWeight() const {
     if (gaze_ == nullptr) {
         return 0.0f;

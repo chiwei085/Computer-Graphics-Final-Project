@@ -14,9 +14,8 @@ struct Quat
     float z = 0.0f;
 
     [[nodiscard]] static Quat FromAxisAngle(const Vec3& axis, float radians);
-    // Shortest-arc spherical interpolation, t in [0,1]. Flips an end so the
-    // sweep always takes the short way around, and degrades to nlerp when the
-    // two orientations are nearly parallel.
+    // Flips an end quaternion to always take the short arc; falls back to nlerp
+    // when nearly parallel.
     [[nodiscard]] static Quat Slerp(const Quat& a, const Quat& b,
                                     float t) noexcept;
     [[nodiscard]] Mat4 ToMat4() const noexcept;

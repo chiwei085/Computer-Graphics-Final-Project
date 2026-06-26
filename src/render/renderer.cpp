@@ -31,24 +31,15 @@ constexpr float kTableTopY = 0.800f;
 constexpr float kGroundShadowY = 0.004f;
 constexpr float kTableShadowY = kTableTopY + 0.0015f;
 
-// Duration of the table re-stage swing when leaving gaze-drag mode (G key): the
-// dinner group orbits the eye to sit in front of its new gaze bearing.
 constexpr float kTableRestageSeconds = 1.4f;
-// The camera follow rides the same G-exit but offset from the table: it waits
-// this long so the table swing reads first, then glides over its own (longer)
-// duration, arriving after the table has settled.
+// Camera follow starts after the table swing, so the swing reads first.
 constexpr float kCameraRestageDelay = 0.55f;
 constexpr float kCameraTransitionSeconds = 1.7f;
 constexpr float kCameraFovYDeg = 55.0f;
 constexpr float kCameraNearPlane = 0.1f;
 
-// Three-point stylised rig.
-//   KEY  : warm point light, upper front-left — shapes the primary volume from
-//          a 3/4 angle (never frontal-flat) and casts the planar shadow.
-//   FILL : cool directional light from front-right — a weak (~25% of key)
-//          opposing wash that lifts the shadow side without flattening it.
-//   RIM  : cyan directional light from behind-above — rakes the top/back edges
-//          so the robot and drone separate cleanly from the dark backdrop.
+// Three-point rig: KEY (warm point, casts shadow), FILL (cool directional),
+// RIM (cyan directional from behind). w=1 positional, w=0 directional.
 constexpr std::array<float, 4> kKeyLightPos = {-2.60f, 6.40f, 3.40f, 1.0f};
 constexpr std::array<float, 4> kFillLightDir = {0.66f, 0.34f, 0.55f, 0.0f};
 constexpr std::array<float, 4> kRimLightDir = {-0.24f, 0.52f, -0.92f, 0.0f};
@@ -59,17 +50,10 @@ constexpr std::array<float, 4> kGroundPlane = {0.0f, 1.0f, 0.0f,
                                                -kGroundShadowY};
 constexpr std::array<float, 4> kTablePlane = {0.0f, 1.0f, 0.0f, -kTableShadowY};
 
-// ── Per-gaze-zone mood ─────────────────────────────────────────────────────
-// Each gaze zone restages the whole table with its own light colours, global
-// ambient, background/fog tint and shadow weight. The eased zone weights from
-// GazeController blend these every frame, giving the ~0.6s crossfade for free.
-// Specular and attenuation are NOT per-zone (set once in Initialize) so the
-// light *roles* (key shapes volume, fill lifts the shadow side, rim draws the
-// edge) stay constant while only their colour/mood shifts.
+// Per-zone light/fog/shadow palette; blended each frame by eased zone weights.
+// Specular and attenuation are shared (set once in Initialize).
 constexpr std::array<ZonePalette, 3> kZonePalettes = {{
-    // 預見 Foresight — cool, clean, "computed": near-white cool key, strong
-    // cyan
-    // rim, deep-navy air, fairly defined shadows.
+    // 預見 Foresight
     {{1.10f, 1.06f, 1.00f, 1.0f},
      {0.20f, 0.27f, 0.40f, 1.0f},
      {0.34f, 0.62f, 0.78f, 1.0f},
@@ -78,8 +62,7 @@ constexpr std::array<ZonePalette, 3> kZonePalettes = {{
      13.0f,
      26.0f,
      0.22f},
-    // 眷戀 Longing — warm, soft, intimate: amber key, warm low fill, hazy amber
-    // air pulled closer, light soft shadows.
+    // 眷戀 Longing
     {{1.26f, 1.00f, 0.70f, 1.0f},
      {0.34f, 0.24f, 0.22f, 1.0f},
      {0.52f, 0.38f, 0.28f, 1.0f},
@@ -88,9 +71,7 @@ constexpr std::array<ZonePalette, 3> kZonePalettes = {{
      12.0f,
      22.0f,
      0.14f},
-    // 盲點 Blindspot — neutral, desaturated, flat and stark: cold even light,
-    // raised ambient (low contrast), weak rim, hard dark shadows. The world is
-    // simply itself.
+    // 盲點 Blindspot
     {{0.86f, 0.90f, 0.94f, 1.0f},
      {0.42f, 0.45f, 0.48f, 1.0f},
      {0.18f, 0.20f, 0.22f, 1.0f},
@@ -176,31 +157,20 @@ void Renderer::Initialize() {
     glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
     glClearColor(0.045f, 0.072f, 0.105f, 1.0f);
 
-    // Linear distance fog. Colour/start/end are re-tinted to the active zone
-    // every frame (see Render); tuned so only the far floor dissolves into the
-    // background while the table stays clear at normal zoom — turns the flat
-    // "infinite plane" horizon into atmospheric depth.
+    // Linear fog; colour/start/end are re-tinted per zone every frame.
     glEnable(GL_FOG);
     glFogi(GL_FOG_MODE, GL_LINEAR);
     glHint(GL_FOG_HINT, GL_NICEST);
 
-    // Compute specular relative to the real camera (tighter, more localised
-    // highlights) and add it on top of the textured colour so highlights stay
-    // crisp instead of being multiplied down into a dull plastic sheen.
+    // Separate specular keeps highlights crisp on top of texture modulation.
     glLightModeli(GL_LIGHT_MODEL_LOCAL_VIEWER, GL_TRUE);
     glLightModeli(GL_LIGHT_MODEL_COLOR_CONTROL, GL_SEPARATE_SPECULAR_COLOR);
 
-    // Low, cool global ambient — keeps the darkest faces from going pure black
-    // while staying well below the lit side so volume is never washed out.
     const std::array<float, 4> scene_ambient = {0.060f, 0.072f, 0.098f, 1.0f};
     glLightModelfv(GL_LIGHT_MODEL_AMBIENT, scene_ambient.data());
 
-    // KEY — warm, the dominant volume-shaping light. Mild attenuation lets the
-    // far floor fall off so brightness concentrates around the characters.
     const std::array<float, 4> key_ambient = {0.030f, 0.030f, 0.035f, 1.0f};
     const std::array<float, 4> key_diffuse = {1.18f, 1.08f, 0.92f, 1.0f};
-    // Crisper than before so metal/porcelain/glass catch a defined highlight
-    // against the now-darker stage instead of looking like dull plastic.
     const std::array<float, 4> key_specular = {0.72f, 0.70f, 0.64f, 1.0f};
     glLightfv(GL_LIGHT0, GL_AMBIENT, key_ambient.data());
     glLightfv(GL_LIGHT0, GL_DIFFUSE, key_diffuse.data());
@@ -209,25 +179,19 @@ void Renderer::Initialize() {
     glLightf(GL_LIGHT0, GL_LINEAR_ATTENUATION, 0.022f);
     glLightf(GL_LIGHT0, GL_QUADRATIC_ATTENUATION, 0.0009f);
 
-    // FILL — cool, directional, ~25% of key. No specular so it only lifts the
-    // diffuse shadow side (preserving material colour) without adding
-    // highlights.
+    // Fill has no specular so it lifts the shadow side without adding highlights.
     const std::array<float, 4> fill_diffuse = {0.24f, 0.29f, 0.40f, 1.0f};
     const std::array<float, 4> fill_specular = {0.0f, 0.0f, 0.0f, 1.0f};
     glLightfv(GL_LIGHT1, GL_AMBIENT, kBlack.data());
     glLightfv(GL_LIGHT1, GL_DIFFUSE, fill_diffuse.data());
     glLightfv(GL_LIGHT1, GL_SPECULAR, fill_specular.data());
 
-    // RIM — cyan, directional from behind. Because it lights back/top faces it
-    // never reaches the camera-facing front, so it draws a separating edge
-    // without flattening the form.
     const std::array<float, 4> rim_diffuse = {0.34f, 0.60f, 0.74f, 1.0f};
     const std::array<float, 4> rim_specular = {0.36f, 0.58f, 0.68f, 1.0f};
     glLightfv(GL_LIGHT2, GL_AMBIENT, kBlack.data());
     glLightfv(GL_LIGHT2, GL_DIFFUSE, rim_diffuse.data());
     glLightfv(GL_LIGHT2, GL_SPECULAR, rim_specular.data());
 
-    // Load textures — fall back to debug checkerboard if file is missing
     const std::filesystem::path tex_dir = "assets/textures";
     LoadTexOrCheckerboard(textures_["wood"], tex_dir / "wood.png");
     LoadTexOrCheckerboard(textures_["cloth"], tex_dir / "cloth.png");
@@ -292,7 +256,6 @@ void Renderer::Initialize() {
         .candles = std::move(candles),
     };
 
-    // Build the full scene graph.
     scene_root_ = std::make_unique<SceneGraph>("root");
     SceneNode& root = scene_root_->Root();
     camera_.SetRoomBounds(DefaultRoomBounds());
@@ -310,8 +273,6 @@ void Renderer::Initialize() {
     gaze_.Bind(*scene_root_);
     animation_.Bind(*scene_root_, gaze_);
 
-    // Roots spun together during the timeline showcase (both centred on the
-    // table at the world origin, so rotating their Y turns the table in place).
     table_root_ = scene_root_->Find("dinner_scene");
     props_root_ = scene_root_->Find("story_props");
 
@@ -331,8 +292,6 @@ void Renderer::Resize(int width, int height) {
 
 void Renderer::Update(float delta_seconds) {
     elapsed_seconds_ += delta_seconds;
-    // Re-stage swing first: it moves the table roots, which the gaze/animation
-    // updates below then read for shadows and prop placement.
     UpdateTableTransition(delta_seconds);
     UpdateCameraRestage(delta_seconds);
     camera_.Update(delta_seconds);
@@ -340,10 +299,6 @@ void Renderer::Update(float delta_seconds) {
     animation_.Update(delta_seconds);
 }
 
-// Orbit pose the dinner group should hold so it stays at its initial bearing in
-// front of a gaze yawed by `yaw_deg`: rotate the whole group around the eye's
-// vertical axis by that yaw. Both roots rest at the world origin, so the orbit
-// reduces to position = Pv - Ry(yaw)*Pv (Pv = eye xz) and euler.y = yaw.
 namespace
 {
 struct TablePose
@@ -353,9 +308,6 @@ struct TablePose
 };
 
 TablePose OrbitPoseForYaw(Vec3 eye_origin, float yaw_deg) {
-    // Rotating the rest-at-origin group around the eye's vertical axis by
-    // `yaw_deg` reduces to position = Pv - Ry(yaw)*Pv (Pv = eye xz, y dropped)
-    // and euler.y = yaw, which keeps it orbiting the eye at a fixed bearing.
     const Vec3 pivot{eye_origin.x, 0.0f, eye_origin.z};
     const float r = yaw_deg * std::numbers::pi_v<float> / 180.0f;
     return TablePose{pivot - RotateAroundY(pivot, r), yaw_deg};
@@ -440,10 +392,6 @@ void Renderer::UpdateCameraRestage(float delta_seconds) {
 }
 
 OrbitCamera::CameraPose Renderer::CameraFollowPoseForRestage() const {
-    // The table root moves as a rigid restage group; aim at the living volume
-    // above the tabletop, not at the root/floor. Pulling the camera from the
-    // eye's own gaze direction keeps all three zones using the same geometric
-    // rule while still producing different views.
     const Vec3 table_focus = table_to_pos_ + Vec3{0.0f, 1.10f, 0.0f};
     return OrbitCamera::GazePose(gaze_.Origin(), gaze_.Direction(),
                                  table_focus);
@@ -460,9 +408,6 @@ void Renderer::RefreshZonePaletteCache() {
 }
 
 void Renderer::Render() {
-    // Blend the active gaze zone's mood from the eased zone weights. This is
-    // the single source of the ~0.6s crossfade — lights, background, fog and
-    // shadow weight all read from the same blended palette.
     RefreshZonePaletteCache();
     const ZonePalette& pal = zone_palette_cache_;
 
@@ -473,21 +418,18 @@ void Renderer::Render() {
     const Mat4 view = camera_.ViewMatrix();
     glLoadMatrixf(view.Data());
 
-    // Per-zone light colours + global ambient (specular/attenuation stay
-    // fixed).
     glLightfv(GL_LIGHT0, GL_DIFFUSE, pal.key_diffuse.data());
     glLightfv(GL_LIGHT1, GL_DIFFUSE, pal.fill_diffuse.data());
     glLightfv(GL_LIGHT2, GL_DIFFUSE, pal.rim_diffuse.data());
     glLightModelfv(GL_LIGHT_MODEL_AMBIENT, pal.ambient.data());
 
-    // Fog tinted to match the background so the far floor dissolves seamlessly.
     const std::array<float, 4> fog_color = {pal.bg[0], pal.bg[1], pal.bg[2],
                                             1.0f};
     glFogfv(GL_FOG_COLOR, fog_color.data());
     glFogf(GL_FOG_START, pal.fog_start);
     glFogf(GL_FOG_END, pal.fog_end);
 
-    ApplyLighting();  // light positions — must run after the view matrix loads
+    ApplyLighting();  // positions are view-space; must run after glLoadMatrixf
 
     DrawGroundReceiver();
 
@@ -551,16 +493,12 @@ void Renderer::SetGazeControlMode(bool enabled) {
     gaze_.SetControlMode(enabled);
 
     if (enabled) {
-        // Entering gaze-drag: snapshot the camera wherever it currently is and
-        // cancel any in-flight restage. Every entry is treated as a fresh start
-        // regardless of how many G presses have happened before.
         camera_restage_pending_ = false;
         camera_home_pending_ = false;
     }
     else {
-        // Exiting gaze-drag: swing the dinner group to the new gaze bearing.
-        // A completed 360-degree cycle homes the whole presentation instead of
-        // preserving the accumulated yaw (e.g. 366°) as a new side view.
+        // A completed 360-degree cycle resets to origin rather than leaving a
+        // near-full-rotation offset as a permanent side view.
         const bool completed_cycle_to_foresight =
             gaze_.ActiveZone() == GazeZone::kForesight &&
             std::abs(gaze_.YawOffsetDeg()) >= 300.0f;
@@ -586,8 +524,6 @@ void Renderer::ResetGazeAim() {
     gaze_.ResetAim();
     StartTableRestage(0.0f);
     camera_home_pending_ = true;
-    // If not in gaze-drag mode, re-arm the camera to return to the saved pose
-    // so it follows the table swinging back to origin.
     if (!gaze_.control_mode()) {
         camera_restage_pending_ = true;
         camera_restage_delay_ = kCameraRestageDelay;
@@ -655,9 +591,6 @@ void Renderer::DrawGroundReceiver() const {
     glPushAttrib(GL_ENABLE_BIT);
     glDisable(GL_TEXTURE_2D);
     ground_material_.Apply();
-    // Large enough to keep the dinner group on the floor at any gaze yaw: the
-    // table orbits up to 1.5 units from the eye pivot and extends ~2.2 m wide,
-    // so the worst-case excursion is ~3.7 m from the pivot in any direction.
     DrawReceiverBox({0.0f, -0.020f, 0.0f}, {12.0f, 0.020f, 12.0f});
     glPopAttrib();
 }
@@ -762,9 +695,8 @@ void Renderer::DrawShadowPass(const std::array<float, 16>& shadow_matrix,
     DrawReceiverBox(receiver_center, receiver_scale);
 
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-    // Write-once shadow accumulation: the receiver mask starts at 1. The first
-    // shadow fragment that survives depth testing blends once, then increments
-    // the pixel to 2 so overlapping projected triangles cannot darken it again.
+    // Stencil starts at 1; first shadow fragment increments to 2, preventing
+    // overlapping projected triangles from darkening the same pixel twice.
     glStencilMask(0xFF);
     glStencilFunc(GL_EQUAL, 1, 0xFF);
     glStencilOp(GL_KEEP, GL_KEEP, GL_INCR);

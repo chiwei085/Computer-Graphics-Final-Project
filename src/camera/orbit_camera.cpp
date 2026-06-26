@@ -18,16 +18,12 @@ constexpr float kMaxPitch = 1.25f;  // ≈ 72°
 constexpr float kMinDistance = 2.0f;
 constexpr float kMaxDistance = 18.0f;
 
-// Initial camera state (duplicated in Reset())
 const Quat kInitOrientation = Quat::FromAxisAngle({1.0f, 0.0f, 0.0f}, -0.25f);
 const Vec3 kInitTarget{0.0f, 1.5f, -0.5f};
 constexpr float kInitPitch = 0.25f;
 constexpr float kInitDistance = 9.0f;
 
-// Where the gaze-follow camera parks relative to the eye: pulled back behind
-// the eye (opposite the gaze) and raised, so it frames the eye in the
-// foreground with the re-staged table beyond, instead of jamming into the
-// tabletop (the eye sits almost directly over the table).
+// Gaze-follow offsets: behind the eye, laterally offset, and raised.
 constexpr float kGazeBackDist = 4.8f;
 constexpr float kGazeSideDist = 2.8f;
 constexpr float kGazeRise = 1.65f;
@@ -59,15 +55,10 @@ bool IsFinite(const Quat& q) {
 
 }  // namespace
 
-// ── View ─────────────────────────────────────────────────────────────────────
-
 Mat4 OrbitCamera::ViewMatrix() const {
     return Mat4::LookAt(Eye(), target_,
                         orientation_.Rotate({0.0f, 1.0f, 0.0f}));
 }
-
-// ── Scripted transition
-// ───────────────────────────────────────────────────────
 
 void OrbitCamera::Update(float delta_seconds) {
     if (!transitioning_) {
@@ -122,11 +113,7 @@ OrbitCamera::CameraPose OrbitCamera::GazePose(Vec3 eye_origin, Vec3 gaze_dir,
     if (LengthSquared(side) < 0.0001f) {
         side = {1.0f, 0.0f, 0.0f};
     }
-    // The eye sits almost on top of the table, so a literal POV (stepping the
-    // lens forward past the eye) jams it into the tabletop. Instead use a
-    // shoulder camera: back, above, and laterally offset from the gaze. The
-    // side offset keeps the eye readable without letting it occlude the table
-    // in zones where the re-stage lines up directly behind it.
+    // Shoulder camera avoids jamming the lens into the tabletop below the eye.
     const Vec3 cam_eye = eye_origin - g * kGazeBackDist + side * kGazeSideDist +
                          Vec3{0.0f, kGazeRise, 0.0f};
     const Vec3 forward = Normalize(look_at - cam_eye);
@@ -134,8 +121,7 @@ OrbitCamera::CameraPose OrbitCamera::GazePose(Vec3 eye_origin, Vec3 gaze_dir,
     CameraPose pose;
     pose.target = look_at;
     pose.distance = Length(look_at - cam_eye);
-    // Decompose `forward` into the same world-Y-yaw / local-X-pitch convention
-    // the drag controls build, so dragging after the sweep stays continuous.
+    // Match the world-Y-yaw / local-X-pitch convention used by drag controls.
     pose.pitch = std::asin(std::clamp(-forward.y, -1.0f, 1.0f));
     const float yaw = std::atan2(-forward.x, -forward.z);
     pose.orientation = (Quat::FromAxisAngle({0.0f, 1.0f, 0.0f}, yaw) *
@@ -249,8 +235,7 @@ OrbitCamera::SolveResult OrbitCamera::SolvePose(
     const Aabb3 camera_box = room_bounds_.CameraInterior();
     const Aabb3 eye_box = camera_box.Inset(room_bounds_.camera_radius);
 
-    // Orientation is fixed during the target-shift loop; hoist basis to avoid
-    // redundant Quat::Rotate calls on every iteration.
+    // Hoist basis outside the loop; orientation is fixed here.
     const CameraBasis loop_basis = BuildCameraBasis(pose.orientation);
     auto volume_bounds = [&](const CameraPose& p) {
         const Vec3 eye = EyeForPose(p);
@@ -316,9 +301,6 @@ OrbitCamera::SolveResult OrbitCamera::SolvePose(
     return {pose, inside, SubjectInsideFrustum(pose)};
 }
 
-// ── Orbit
-// ─────────────────────────────────────────────────────────────────────
-
 void OrbitCamera::BeginDrag(int x, int y) {
     if (transitioning_) {
         return;
@@ -337,15 +319,12 @@ void OrbitCamera::DragTo(int x, int y) {
     last_x_ = x;
     last_y_ = y;
 
-    // Yaw: world-space Y axis (left-multiply keeps world-up stable).
-    // Negate dx so drag-right makes scene orbit right.
+    // Left-multiply yaw keeps world-up stable; negate dx so drag-right orbits right.
     const Quat yaw =
         Quat::FromAxisAngle({0.0f, 1.0f, 0.0f}, -dx * kOrbitSensitivity);
     orientation_ = (yaw * orientation_).Normalized();
 
-    // Pitch: camera-local X axis (right-multiply stays local).
-    // Negate dy so drag-down = bird's eye (camera rises).
-    // Clamp via separate accumulator to prevent flip past ±90°.
+    // Right-multiply pitch stays local; separate accumulator prevents flip past ±90°.
     const float raw_delta = dy * kOrbitSensitivity;
     const float new_pitch =
         std::clamp(pitch_accumulated_ + raw_delta, -kMaxPitch, kMaxPitch);
@@ -361,9 +340,6 @@ void OrbitCamera::DragTo(int x, int y) {
 void OrbitCamera::EndDrag() {
     dragging_ = false;
 }
-
-// ── Pan
-// ───────────────────────────────────────────────────────────────────────
 
 void OrbitCamera::BeginPan(int x, int y) {
     if (transitioning_) {
@@ -387,8 +363,6 @@ void OrbitCamera::PanTo(int x, int y) {
     const Vec3 up = orientation_.Rotate({0.0f, 1.0f, 0.0f});
     const float scale = distance_ * kPanSensitivity;
 
-    // Drag right → target shifts in -right so scene appears to slide right.
-    // Drag down (dy>0) → target shifts in +up so scene slides down.
     target_ = target_ - right * (dx * scale) + up * (dy * scale);
     ApplyPose(SolvePose(CurrentPose(), true).pose);
 }
@@ -396,9 +370,6 @@ void OrbitCamera::PanTo(int x, int y) {
 void OrbitCamera::EndPan() {
     panning_ = false;
 }
-
-// ── Zoom / Reset
-// ──────────────────────────────────────────────────────────────
 
 void OrbitCamera::Zoom(float wheel_steps) {
     if (transitioning_) {

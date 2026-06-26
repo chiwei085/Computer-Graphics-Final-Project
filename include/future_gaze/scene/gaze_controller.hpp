@@ -10,16 +10,12 @@ namespace future_gaze
 
 class SceneGraph;
 
-// The three ways the Prediction Core's gaze rewrites the world. Selected by the
-// eye's yaw split into 120-degree sectors — rotating across a boundary jumps to
-// the next zone, which restages the whole table (lighting + which phenomenon
-// blooms). See docs/dev/story_theme.md.
+// Gaze zone selected by yaw split into 120-degree sectors.
 enum class GazeZone
 {
     kForesight = 0,  // 預見 — futures bloom (cool/cyan)
     kLonging = 1,    // 眷戀 — memories unfold (warm/gold)
-    kBlindspot =
-        2,  // 盲點 — deformation stops; only plain/blind objects remain
+    kBlindspot = 2,  // 盲點 — deformation stops
 };
 inline constexpr int kGazeZoneCount = 3;
 
@@ -45,9 +41,7 @@ public:
 
     [[nodiscard]] Vec3 Origin() const noexcept { return origin_; }
     [[nodiscard]] Vec3 Direction() const noexcept { return direction_; }
-    // User-applied yaw aim in degrees (excludes the base facing and idle sway).
-    // The table re-stage rotates the whole dinner group by this much around the
-    // eye so it keeps its initial bearing in front of the gaze.
+    // User yaw offset in degrees, excludes base facing and idle sway.
     [[nodiscard]] float YawOffsetDeg() const noexcept {
         return yaw_offset_deg_;
     }
@@ -58,11 +52,8 @@ public:
         return direction_ * -1.0f;
     }
 
-    // The zone the eye currently points into (snaps at 120-degree boundaries).
     [[nodiscard]] GazeZone ActiveZone() const noexcept { return active_zone_; }
-    // Eased per-zone weight in [0,1]; the active zone rises to 1 and the others
-    // fall to 0 over ~0.6s. Drives both the lighting crossfade and the prop
-    // bloom/collapse so they stay in lockstep. The three weights sum to ~1.
+    // Eased weight [0,1] for the given zone; active zone approaches 1 in ~0.6s.
     [[nodiscard]] float ZoneWeight(GazeZone zone) const noexcept {
         return zone_weight_[static_cast<std::size_t>(zone)];
     }
@@ -95,9 +86,7 @@ private:
     float pitch_offset_deg_ = 0.0f;
     bool zone_override_active_ = false;
 
-    // Which 120-degree yaw sector the eye points into, and the eased weights
-    // that crossfade toward it. Initialised so the resting eye starts fully in
-    // the Foresight zone (no startup fade-in flash).
+    // Initialised to Foresight so the resting eye starts fully in zone 0.
     GazeZone active_zone_ = GazeZone::kForesight;
     float zone_weight_[kGazeZoneCount] = {1.0f, 0.0f, 0.0f};
     std::size_t zone_weights_revision_ = 0;

@@ -11,8 +11,7 @@ namespace future_gaze
 class OrbitCamera
 {
 public:
-    // A full snapshot of the camera's framing, used to record a vantage and to
-    // drive scripted transitions between two vantages.
+    // Snapshot of camera framing; used for recording vantages and transitions.
     struct CameraPose
     {
         Quat orientation;
@@ -23,8 +22,7 @@ public:
 
     [[nodiscard]] Mat4 ViewMatrix() const;
 
-    // Advances an in-flight scripted transition (no-op when idle). Call once
-    // per frame before reading ViewMatrix().
+    // Advances an in-flight scripted transition; no-op when idle.
     void Update(float delta_seconds);
     [[nodiscard]] bool transitioning() const noexcept { return transitioning_; }
 
@@ -37,22 +35,16 @@ public:
     [[nodiscard]] bool PoseVolumeInsideRoom(
         const CameraPose& pose) const noexcept;
     [[nodiscard]] bool CurrentSubjectFramed() const noexcept;
-    // Smoothly sweep (SmootherStep) from the current pose to `goal` over
-    // `duration` seconds. User input is ignored until it completes.
+    // Eases to `goal` over `duration` seconds; user input blocked until done.
     void StartTransitionTo(const CameraPose& goal, float duration);
-    // The eye's own viewpoint: the camera steps just in front of the Prediction
-    // Core (at `eye_origin`, along `gaze_dir`) and looks at `look_at` — used to
-    // watch the dinner table after it slides into the gaze and turns its front
-    // to face the eye, so we see that presented front from the eye's vantage.
+    // Shoulder camera behind `eye_origin` along `gaze_dir`, looking at `look_at`.
     [[nodiscard]] static CameraPose GazePose(Vec3 eye_origin, Vec3 gaze_dir,
                                              Vec3 look_at);
 
-    // Orbit: left mouse drag — yaw around world Y, pitch around camera local X
     void BeginDrag(int x, int y);
     void DragTo(int x, int y);
     void EndDrag();
 
-    // Pan: middle / right mouse drag — translate target in camera XY plane
     void BeginPan(int x, int y);
     void PanTo(int x, int y);
     void EndPan();
@@ -82,7 +74,6 @@ private:
         const CameraPose& pose) const noexcept;
     [[nodiscard]] Vec3 ViewDirection(const CameraPose& pose) const noexcept;
 
-    // Orbit
     bool dragging_ = false;
     int last_x_ = 0;
     int last_y_ = 0;
@@ -90,13 +81,10 @@ private:
     float pitch_accumulated_ = 0.25f;  // tracks total pitch for clamping
     float distance_ = 9.0f;
 
-    // Pan
     bool panning_ = false;
     int pan_last_x_ = 0;
     int pan_last_y_ = 0;
 
-    // Scripted transition (G-key gaze-POV sweep). While active, user input is
-    // ignored and the pose is eased from `from` to `to`.
     bool transitioning_ = false;
     float transition_t_ = 0.0f;
     float transition_dur_ = 1.0f;

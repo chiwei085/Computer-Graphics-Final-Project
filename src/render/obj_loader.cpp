@@ -13,7 +13,6 @@ namespace future_gaze
 namespace
 {
 
-// Parse a space-separated float from a string_view; advance the view.
 bool ParseFloat(std::string_view& sv, float& out) {
     while (!sv.empty() && sv.front() == ' ') sv.remove_prefix(1);
     if (sv.empty()) return false;
@@ -152,10 +151,8 @@ std::vector<ModelMesh> ObjLoader::Load(const std::filesystem::path& path) {
     std::vector<std::array<float, 2>> texcoords;
     std::vector<Vec3> normals;
 
-    // MTL materials parsed once from the sidecar file.
     std::unordered_map<std::string, MtlEntry> mtl_map;
 
-    // Groups: each usemtl starts a new group.
     struct FaceGroup
     {
         std::string mat_name;
@@ -213,7 +210,6 @@ std::vector<ModelMesh> ObjLoader::Load(const std::filesystem::path& path) {
         }
         else if (token == "f") {
             ensure_group();
-            // Collect all corner indices on this face line.
             std::vector<FaceIdx> corners;
             while (!sv.empty()) {
                 while (!sv.empty() && sv.front() == ' ') sv.remove_prefix(1);

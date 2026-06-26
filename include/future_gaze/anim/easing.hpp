@@ -5,8 +5,6 @@
 #include <limits>
 #include <numbers>
 
-// Reusable easing curves and smooth-follow helpers.
-
 namespace future_gaze::ease
 {
 
@@ -24,8 +22,7 @@ namespace future_gaze::ease
     return t * t * (3.0f - 2.0f * t);
 }
 
-// Quintic smootherstep — zero first *and* second derivative at the ends, so
-// even the acceleration is continuous (reads as the smoothest ramp).
+// Quintic smootherstep — zero first and second derivatives at both ends.
 [[nodiscard]] constexpr float SmootherStep(float t) noexcept {
     t = Clamp01(t);
     return t * t * t * (t * (t * 6.0f - 15.0f) + 10.0f);
@@ -45,7 +42,7 @@ namespace future_gaze::ease
     return 1.0f - f * f * f * 0.5f;
 }
 
-// Slight overshoot then settle — gives unfolds a confident, springy arrival.
+// Slight overshoot then settle.
 [[nodiscard]] inline float OutBack(float t,
                                    float overshoot = 1.70158f) noexcept {
     t = Clamp01(t) - 1.0f;
@@ -58,15 +55,13 @@ namespace future_gaze::ease
     return OutBack(t);
 }
 
-// Symmetric 0→1→0 ramp with eased turn-around — used for breathing loops.
+// Symmetric 0→1→0 ramp with eased turn-around.
 [[nodiscard]] inline float PingPongSine(float phase01) noexcept {
     const float t = phase01 - std::floor(phase01);
     return 0.5f * (1.0f - std::cos(2.0f * std::numbers::pi_v<float> * t));
 }
 
-// Unity-style critically damped follower. Moves `current` toward `target`
-// without overshoot, with a characteristic response time `smooth_time`.
-// `velocity` is carried between calls (in/out). Frame-rate independent.
+// Critically damped follower, frame-rate independent. velocity is in/out state.
 [[nodiscard]] inline float SmoothDamp(
     float current, float target, float& velocity, float smooth_time, float dt,
     float max_speed = std::numeric_limits<float>::infinity()) noexcept {
@@ -80,7 +75,6 @@ namespace future_gaze::ease
     const float temp = (velocity + omega * change) * dt;
     velocity = (velocity - omega * temp) * exp;
     float result = (current - change) + (change + temp) * exp;
-    // Prevent overshoot past the target.
     if ((target - current > 0.0f) == (result > target)) {
         result = target;
         velocity = (result - target) / dt;
@@ -88,8 +82,7 @@ namespace future_gaze::ease
     return result;
 }
 
-// Shortest-arc angle follower (degrees). Wraps the error into [-180, 180] so a
-// turn from 350° to 10° goes the short way instead of unwinding 340°.
+// Shortest-arc SmoothDamp in degrees; wraps error into [-180, 180].
 [[nodiscard]] inline float SmoothDampAngleDeg(float current_deg,
                                               float target_deg, float& velocity,
                                               float smooth_time,

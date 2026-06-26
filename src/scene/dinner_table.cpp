@@ -57,10 +57,6 @@ void BuildChair(SceneNode& root, Vec3 base, float yaw_deg,
                                             leg_mat, metal_tex);
     }
 
-    // Longing/private-front kit. The pieces are authored fully open, then
-    // SceneAnimation collapses them until the Prediction Core aligns with the
-    // chair. Each chair gets a different grammar: body trace, childhood fort,
-    // or argument slashes.
     if (memory_target >= 0) {
         chair
             .NewChild(
@@ -147,17 +143,10 @@ void BuildChair(SceneNode& root, Vec3 base, float yaw_deg,
     }
 }
 
-// A vertical stack of holographic "future-state" slices rising out of a wine
-// glass. Built collapsed at the rim; the SceneAnimation fans them open with
-// staggered phase so the lowest (most probable future) slice is the thickest
-// and the column appears to bloom.
 void BuildFutureStack(SceneNode& glass, int target) {
     constexpr int kSlices = 5;
     auto& stack = glass.NewChild("future_stack").at({0.0f, 0.30f, 0.0f});
     for (int i = 0; i < kSlices; ++i) {
-        // Lower slices are wider/brighter (higher probability); upper slices
-        // thin out into speculative futures. Slabs (not disks) so the glow
-        // reads as a solid bar from any orbit angle.
         const float f = static_cast<float>(i) / static_cast<float>(kSlices - 1);
         const float half = 0.100f - 0.052f * f;
         const float intensity = 0.85f - 0.45f * f;
@@ -167,8 +156,6 @@ void BuildFutureStack(SceneNode& glass, int target) {
             .draw_glow(Mesh::Cube(), Material::GlowCyan(intensity));
     }
 
-    // A falling-arc prediction: several thin cyan bars lean out of the current
-    // glass, showing the likely path before the glass has actually moved.
     for (int i = 0; i < 4; ++i) {
         const float f = static_cast<float>(i);
         glass.NewChild(StoryName(names::kFuturePrefix, target, "trajectory", i))
@@ -179,7 +166,6 @@ void BuildFutureStack(SceneNode& glass, int target) {
             .draw_glow(Mesh::Cube(), Material::GlowCyan(0.42f - 0.055f * f));
     }
 
-    // Water stains are future consequences appearing early on the table plane.
     for (int i = 0; i < 2; ++i) {
         glass.NewChild(StoryName(names::kFuturePrefix, target, "stain", i))
             .at({0.18f + 0.095f * static_cast<float>(i), 0.004f,
@@ -191,8 +177,6 @@ void BuildFutureStack(SceneNode& glass, int target) {
                        Material::GlowCyan(0.30f - 0.065f * i));
     }
 
-    // Possible shards sit farther along the predicted fall, small and sharp so
-    // the future reads as multiple incompatible outcomes.
     for (int i = 0; i < 5; ++i) {
         const float f = static_cast<float>(i);
         glass.NewChild(StoryName(names::kFuturePrefix, target, "shard", i))
@@ -231,8 +215,6 @@ void BuildBlindArtifacts(SceneNode& root, const Texture* paper_tex,
                          {0.035f, 0.030f, 0.025f, 1.0f},
                          {0.0f, 0.0f, 0.0f, 1.0f}, 1.0f);
 
-    // Unopened letter under the table: detailed, quiet, and unaffected by the
-    // prediction/longing deformation system.
     root.NewChild("blind_unopened_letter")
         .at({-0.34f, 0.018f, 0.54f})
         .rot_y(-18.0f)
@@ -244,8 +226,6 @@ void BuildBlindArtifacts(SceneNode& root, const Texture* paper_tex,
         .scaled({0.008f, 0.003f, 0.086f})
         .draw_as(Mesh::Cube(), crack);
 
-    // A fallen photo with a small pale centre, still legible as an object but
-    // deliberately not glowing.
     root.NewChild("blind_photo_back")
         .at({0.42f, 0.016f, 0.64f})
         .rot_y(23.0f)
@@ -257,8 +237,6 @@ void BuildBlindArtifacts(SceneNode& root, const Texture* paper_tex,
         .scaled({0.064f, 0.002f, 0.040f})
         .draw_as(Mesh::Cube(), paper, paper_tex);
 
-    // A small plant growing from a floor crack, the only organic future that is
-    // not predicted by the AI.
     root.NewChild("blind_floor_crack")
         .at({-0.68f, 0.010f, 0.78f})
         .rot_y(8.0f)
@@ -279,8 +257,6 @@ void BuildBlindArtifacts(SceneNode& root, const Texture* paper_tex,
         .scaled({0.032f, 0.008f, 0.015f})
         .draw_as(Mesh::Sphere(1.0f, 10, 6), leaf);
 
-    // The table leg has a hairline fracture. It is narratively important
-    // because it is not converted into a prediction effect.
     root.NewChild("blind_table_leg_crack_a")
         .at({1.98f, 0.41f, 0.884f})
         .rot_z(15.0f)
@@ -305,8 +281,6 @@ SceneNode& BuildDinnerTable(SceneNode& parent, const TextureSet& tex) {
     const Material glass_mat = Material::Glass();
     const Material cloth = Material::Cloth();
 
-    // ── TABLE
-    // ─────────────────────────────────────────────────────────────────
     {
         auto& table = root.NewChild("table");
         table.NewChild("top")
@@ -323,8 +297,6 @@ SceneNode& BuildDinnerTable(SceneNode& parent, const TextureSet& tex) {
         }
     }
 
-    // ── CHAIRS
-    // ────────────────────────────────────────────────────────────────
     BuildChair(root, {-1.20f, 0.0f, -1.38f}, -5.0f, cloth, metal, tex.cloth,
                tex.metal);
     BuildChair(root, {0.00f, 0.0f, -1.50f}, 0.0f, cloth, metal, tex.cloth,
@@ -338,14 +310,10 @@ SceneNode& BuildDinnerTable(SceneNode& parent, const TextureSet& tex) {
     BuildChair(root, {1.20f, 0.0f, 1.38f}, 174.0f, cloth, metal, tex.cloth,
                tex.metal, 2);
 
-    // ── PLACE SETTINGS
-    // ────────────────────────────────────────────────────────
     BuildPlaceSetting(root, -1.20f, 0.0f, porcelain, glass_mat, tex.marble, 0);
     BuildPlaceSetting(root, 0.00f, 0.0f, porcelain, glass_mat, tex.marble, 1);
     BuildPlaceSetting(root, 1.20f, 0.0f, porcelain, glass_mat, tex.marble, 2);
 
-    // ── CAKE
-    // ──────────────────────────────────────────────────────────────────
     {
         const Material cake_mat({0.20f, 0.12f, 0.08f, 1.0f},
                                 {0.90f, 0.78f, 0.65f, 1.0f},
@@ -367,8 +335,6 @@ SceneNode& BuildDinnerTable(SceneNode& parent, const TextureSet& tex) {
             .draw_as(Mesh::Cube(), slice_mat);
     }
 
-    // ── FLOWER BOUQUET
-    // ────────────────────────────────────────────────────────
     {
         const Material pink({0.15f, 0.06f, 0.08f, 1.0f},
                             {0.88f, 0.60f, 0.65f, 1.0f},
@@ -389,8 +355,6 @@ SceneNode& BuildDinnerTable(SceneNode& parent, const TextureSet& tex) {
         }
     }
 
-    // ── LETTER (paper texture)
-    // ───────────────────────────────────────────────
     root.NewChild("letter")
         .at({-0.08f, 0.800f, 0.12f})
         .rot_y(14.0f)

@@ -242,7 +242,6 @@ void GlutWindow::MouseCallback(int button, int state, int x, int y) {
         return;
     }
 
-    // Orbit: left button
     if (button == GLUT_LEFT_BUTTON) {
         if (state == GLUT_DOWN) {
             if (active_window_->renderer_.GazeControlMode()) {
@@ -266,7 +265,6 @@ void GlutWindow::MouseCallback(int button, int state, int x, int y) {
         return;
     }
 
-    // Pan: middle button or right button
     if (button == GLUT_MIDDLE_BUTTON || button == GLUT_RIGHT_BUTTON) {
         if (state == GLUT_DOWN) {
             active_window_->drag_mode_ = DragMode::Pan;

@@ -5,9 +5,6 @@
 namespace future_gaze
 {
 
-// ── SceneNode
-// ─────────────────────────────────────────────────────────────────
-
 SceneNode::SceneNode(SceneGraph& graph, TfHandle handle)
     : graph_(&graph), handle_(handle) {}
 
@@ -54,9 +51,6 @@ void SceneNode::DrawShadow(float min_world_y, float max_world_y) const {
         child->DrawShadow(min_world_y, max_world_y);
     }
 }
-
-// ── SceneGraph
-// ────────────────────────────────────────────────────────────────
 
 SceneGraph::SceneGraph(std::string root_name) {
     const TfHandle root = tf_.CreateRoot(std::move(root_name));

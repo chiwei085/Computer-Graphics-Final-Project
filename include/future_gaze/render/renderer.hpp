@@ -91,15 +91,9 @@ private:
     float elapsed_seconds_ = 0.0f;
     OrbitCamera camera_;
 
-    // Table re-stage transition (G key): leaving gaze-drag mode swings the
-    // whole dinner group around the eye's vertical axis so it parks in front of
-    // the eye's current gaze, keeping the table's initial bearing relative to
-    // the gaze. Each 120° gaze zone leaves the same table at a different
-    // bearing, reading as the same scene re-staged on a different timeline.
-    // Both roots rest at the world origin, so the orbit math assumes that rest
-    // pose.
-    TfHandle table_root_{};  // "dinner_scene" — table + chairs + props
-    TfHandle props_root_{};  // "story_props" — branch/relic props
+    // G-key re-stage: swings the dinner group to park in front of the new gaze.
+    TfHandle table_root_{};
+    TfHandle props_root_{};
     bool table_transition_active_ = false;
     float table_transition_t_ = 0.0f;
     Vec3 table_from_pos_{};
@@ -107,17 +101,10 @@ private:
     float table_from_yaw_ = 0.0f;
     float table_to_yaw_ = 0.0f;
 
-    // Camera follow that rides the re-stage but deliberately out of sync: on
-    // G-exit the camera waits a beat (table swing reads first), then glides to
-    // a pose recomputed from the gaze bearing and restaged table position.
     bool camera_restage_pending_ = false;
     bool camera_home_pending_ = false;
     float camera_restage_delay_ = 0.0f;
     Mesh receiver_mesh_{Mesh::Cube()};
-    // Darkened so the floor sits below the hero objects in brightness instead
-    // of out-shining them. Combined with distance fog (see Render) this turns
-    // the old flat "infinite grey plane" into a stage that falls off into the
-    // dark.
     Material ground_material_{{0.030f, 0.036f, 0.040f, 1.0f},
                               {0.150f, 0.170f, 0.165f, 1.0f},
                               {0.040f, 0.050f, 0.052f, 1.0f},

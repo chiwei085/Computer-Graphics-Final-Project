@@ -16,10 +16,7 @@
 namespace future_gaze
 {
 
-// ── Node names ───────────────────────────────────────────────────────────────
-// String keys shared between builders (which CREATE nodes) and the animation /
-// gaze systems (which FIND them). Centralising here means a rename is a single
-// edit and a missing node fails loudly at startup.
+// Node name constants shared by builders, animation, and gaze systems.
 namespace names
 {
 
@@ -72,11 +69,8 @@ inline constexpr const char* kMemoryPanel = kMemoryPrefix;
 
 }  // namespace names
 
-// ── Renderable
-// ──────────────────────────────────────────────────────────────── A Mesh and
-// its Material treated as one lifecycle unit. texture is non-owning; nullptr
-// means no texture (GL_TEXTURE_2D disabled). additive: unlit additive halo
-// (fake emissive glow) — used for the Prediction Core without any shader.
+// Mesh+Material pair. texture is non-owning (nullptr = GL_TEXTURE_2D disabled).
+// additive draws as unlit additive halo (fake emissive glow, no shader).
 struct Renderable
 {
     Mesh mesh;
@@ -124,8 +118,6 @@ private:
     }
 };
 
-// ── SceneNode
-// ─────────────────────────────────────────────────────────────────
 class SceneGraph;
 
 class SceneNode
@@ -196,8 +188,6 @@ private:
     std::vector<std::unique_ptr<SceneNode>> children_;
 };
 
-// ── SceneGraph
-// ────────────────────────────────────────────────────────────────
 class SceneGraph
 {
 public:

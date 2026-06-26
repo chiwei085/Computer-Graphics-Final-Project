@@ -20,8 +20,7 @@ struct ModelMesh
 class ObjLoader
 {
 public:
-    // Load an OBJ file (+ its .mtl sidecar if present).
-    // Returns one ModelMesh per usemtl group; empty on failure.
+    // Returns one ModelMesh per usemtl group; loads .mtl sidecar if present.
     [[nodiscard]] static std::vector<ModelMesh> Load(
         const std::filesystem::path& path);
 };

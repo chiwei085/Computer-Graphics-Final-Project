@@ -42,22 +42,14 @@ struct StoryPropAssets
     std::vector<ModelMesh> candles;
 };
 
-// Dinner table with chairs, place settings, cake, flowers, letter.
 SceneNode& BuildDinnerTable(SceneNode& parent, const TextureSet& tex);
-
-// Layered Prediction Core AI eye.
 SceneNode& BuildPredictionCore(SceneNode& parent, const TextureSet& tex);
-
-// Robonaut (table side) + Ingenuity (orbit start position).
 SceneNode& BuildAiCharacters(SceneNode& parent, std::vector<ModelMesh> robonaut,
                              std::vector<ModelMesh> ingenuity,
                              const TextureSet& tex);
-
-// Imported story props: accident chain, memory altars, quiet blind objects.
 SceneNode& BuildStoryProps(SceneNode& parent, StoryPropAssets assets);
-
-// Fixed world-space room shells/backdrops. These are intentionally separate
-// from story_props so G-key restaging cannot rotate walls into the camera.
+// Separate from story_props so G-key restaging cannot rotate walls into the
+// camera.
 SceneNode& BuildEnvironmentShell(SceneNode& parent);
 
 }  // namespace future_gaze::builders

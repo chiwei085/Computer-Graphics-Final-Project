@@ -6,8 +6,6 @@ namespace future_gaze
 {
 
 Material Material::Wood() {
-    // Tighter, richer sheen than a raw plank — reads as a polished dining table
-    // (the hero surface) rather than flat matte timber.
     return Material({0.10f, 0.06f, 0.03f, 1.0f}, {0.45f, 0.28f, 0.12f, 1.0f},
                     {0.26f, 0.20f, 0.13f, 1.0f}, 30.0f);
 }
@@ -55,8 +53,6 @@ Material Material::EmissiveCyan() {
 }
 
 Material Material::EmissiveGreen() {
-    // Brighter diffuse so the modulated circuit texture stays legible, but a
-    // gentler emission so the dark traces are not flooded by self-illumination.
     Material mat({0.05f, 0.16f, 0.07f, 1.0f}, {0.30f, 0.75f, 0.38f, 1.0f},
                  {0.25f, 0.55f, 0.32f, 1.0f}, 24.0f);
     mat.SetEmission({0.03f, 0.16f, 0.06f, 1.0f});

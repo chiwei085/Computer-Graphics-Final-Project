@@ -12,17 +12,13 @@ namespace future_gaze
 
 namespace
 {
-// Bumped so a single ~400px drag crosses one full 120-degree zone (at 0.12 it
-// took ~1000px, making the zone switch feel unreachably heavy).
 constexpr float kDragYawSensitivity = 0.30f;
 constexpr float kDragPitchSensitivity = 0.095f;
 constexpr float kMinPitchOffset = -46.0f;
 constexpr float kMaxPitchOffset = 38.0f;
 
 constexpr float kZoneSpanDeg = 120.0f;
-// Exponential-smoothing time constant for the zone crossfade. tau ~= 0.26s
-// reaches ~90% in ~0.6s, matching the requested transition feel.
-constexpr float kZoneBlendTau = 0.26f;
+constexpr float kZoneBlendTau = 0.26f;  // ~90% blend in ~0.6s
 constexpr float kZoneWeightSnapEpsilon = 0.0005f;
 constexpr float kZoneWeightDirtyEpsilon = 0.00001f;
 
@@ -65,9 +61,7 @@ void GazeController::Update(float elapsed_seconds, float delta_seconds) {
     origin_ = tf_->WorldPosition(eye_root_);
     direction_ = Normalize(tf_->WorldVector(eye_root_, {0.0f, 0.0f, -1.0f}));
 
-    // Zone selection is measured from the user's yaw offset (not absolute yaw),
-    // and excludes the idle sway, so the resting eye sits in the centre of the
-    // Foresight zone and never flickers at a boundary while at rest.
+    // Zone selection uses the user yaw offset only, excluding idle sway.
     UpdateZone(yaw_offset_deg_, delta_seconds);
 }
 
@@ -75,16 +69,14 @@ void GazeController::UpdateZone(float zone_yaw_deg, float delta_seconds) {
     if (zone_override_active_) {
         return;
     }
-    // +half-span centres zone 0 (Foresight) on the resting eye, so a boundary
-    // is a full 60 degrees of rotation away in either direction.
+    // +half-span centres zone 0 on the resting eye (boundary is ±60° away).
     const int sector =
         static_cast<int>(NormalizeDeg360(zone_yaw_deg + kZoneSpanDeg * 0.5f) /
                          kZoneSpanDeg) %
         kGazeZoneCount;
     active_zone_ = static_cast<GazeZone>(sector);
 
-    // Exponential approach toward (1 for active, 0 otherwise). Frame-rate
-    // independent; clamped dt guards against a huge first-frame step.
+    // Exponential approach; clamp dt guards against a large first-frame step.
     const float dt = std::clamp(delta_seconds, 0.0f, 0.1f);
     const float alpha = 1.0f - std::exp(-dt / kZoneBlendTau);
     bool weights_changed = false;

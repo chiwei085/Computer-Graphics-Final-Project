@@ -24,12 +24,7 @@ constexpr Material::Color kBlack = {0.0f, 0.0f, 0.0f, 1.0f};
     return text.find(token) != std::string_view::npos;
 }
 
-// Imported OBJ/MTL materials are tuned for offline renderers (e.g. Robonaut
-// ships Ks=2.0, which blows out into a flat plastic highlight under fixed-
-// function lighting). Re-grade them for the stylised real-time rig:
-//   - tight, low-energy specular so highlights stay small and crisp;
-//   - ambient pulled toward the diffuse hue so shadowed faces keep their
-//     material colour instead of collapsing to neutral grey.
+// OBJ materials are tuned for offline renderers; re-grade for fixed-function GL.
 void StylizeImportedMaterial(Material& mat) {
     const Material::Color d = mat.diffuse();
     mat.SetAmbient({d[0] * 0.30f, d[1] * 0.30f, d[2] * 0.34f, 1.0f});
@@ -276,11 +271,8 @@ RobonautDanceTarget NodeForRole(RobonautDanceNodes& nodes,
 }
 
 RobonautDanceRole ClassifyRobonautPart(const ModelMesh& part) {
-    // The OBJ has no per-joint segmentation — the main cloth and spine frame
-    // each span the full body height. Splitting them across multiple pivot
-    // nodes causes visible tearing during animation. Safe assignment:
-    // everything goes to the whole-body Center node; only unambiguous helmet
-    // pieces get Head.
+    // No per-joint segmentation; main cloth/spine span full height.
+    // Splitting causes tearing, so only helmet pieces (high y) get Head.
     const Vec3 center = part.mesh.Bounds().Center();
     if (center.y > 0.38f) {
         return RobonautDanceRole::Head;
@@ -307,10 +299,7 @@ SceneNode& BuildAiCharacters(SceneNode& parent, std::vector<ModelMesh> robonaut,
     (void)tex;
     auto& root = parent.NewChild("ai_characters");
 
-    // ── ROBONAUT 2 (standing beside the table)
-    // ──────────────────────────────── Model spans Y: -0.50..+0.50
-    // (normalised). Scale 1.7 → ~1.7 m tall. Translate up by scale*0.5 = 0.85
-    // so feet sit at y=0.
+    // Model Y: -0.50..+0.50 (normalised). Scale 1.7 → ~1.7 m; offset 0.85 floors feet.
     if (!robonaut.empty()) {
         auto& rb = root.NewChild(names::kRobonaut)
                        .at({2.40f, 0.85f, 0.50f})
@@ -323,8 +312,6 @@ SceneNode& BuildAiCharacters(SceneNode& parent, std::vector<ModelMesh> robonaut,
         }
     }
 
-    // ── INGENUITY (initial orbit position near the Prediction Core)
-    // ───────────
     if (!ingenuity.empty()) {
         auto& ing = root.NewChild(names::kIngenuity)
                         .at({1.6f, 3.8f, -1.5f})
