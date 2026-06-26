@@ -138,6 +138,60 @@
 - 檔案: Zz Plant.glb
 - sha256: `—`
 
+## cyberpunk_platform
+- 角色: 預見背景 — 科幻預測實驗室的平台，讓未來區不只停在桌面小物。
+- 授權: Public Domain (CC0)
+- 出處: Poly Pizza (Cyberpunk Platform)
+- 來源: https://poly.pizza/m/ctQ5CDmraQ
+- 格式: Poly Pizza page -> GLB -> convert to OBJ
+- 檔案: Cyberpunk Platform.glb
+- sha256: `be7c7ec8b929c5bba2439a5c846b9ccba0fe127892f9381da13d0ffb6c0945a5`
+
+## sci_fi_floor_tile
+- 角色: 預見背景 — 科幻地磚，形成 Prediction Core 計算區的冷色地景。
+- 授權: Public Domain (CC0)
+- 出處: Poly Pizza (Sci Fi Floor Tile)
+- 來源: https://poly.pizza/m/AxCAiLgvHN
+- 格式: Poly Pizza page -> GLB -> convert to OBJ
+- 檔案: Sci Fi Floor Tile.glb
+- sha256: `343332cb90efda2ba56393936e6e10544e1e7f88a0c28514c17c432e8fdf5187`
+
+## sci_fi_wall_3
+- 角色: 預見背景 — 科幻牆片，讓預見區讀成 AI 預測實驗室。
+- 授權: Public Domain (CC0)
+- 出處: Poly Pizza (Sci Fi Wall 3)
+- 來源: https://poly.pizza/m/LYWHc2jkDA
+- 格式: Poly Pizza page -> GLB -> convert to OBJ
+- 檔案: Sci Fi Wall 3.glb
+- sha256: `47c6553539feebea29c5ba78a90e3fc6bde8052a7dc69e559f1ff363cc48a075`
+
+## curtains_double
+- 角色: 眷戀背景 — 雙層窗簾，建立浪漫電影式私人記憶角落。
+- 授權: Public Domain (CC0)
+- 出處: Poly Pizza (Curtains Double)
+- 來源: https://poly.pizza/m/kkeII96j9N
+- 格式: Poly Pizza page -> GLB -> convert to OBJ
+- 檔案: Curtains Double.glb
+- sha256: `3e1c17ee803414382470f1316825005ba4808f5c665602f8223880b1578f76b9`
+
+## lamp_with_shade
+- 角色: 眷戀背景 — 有燈罩的立燈，提供暖色、浪漫、懷舊的場景重心。
+- 授權: Public Domain (CC0)
+- 出處: Poly Pizza (Lamp With Shade)
+- 來源: https://poly.pizza/m/1nKtMmYxLT
+- 格式: Poly Pizza page -> GLB -> convert to OBJ
+- 檔案: Lamp With Shade.glb
+- sha256: `e4a0e9677c1e8aeacf7d1be2c76124e9b325714fc250c35792888f6563b7290e`
+
+## candles
+- 角色: 眷戀背景 — 蠟燭群，補強私人記憶的柔光與儀式感。
+- 授權: Public Domain (CC0)
+- 出處: Poly Pizza (Candles)
+- 來源: https://poly.pizza/m/AnzHB44wlW
+- 格式: Poly Pizza page -> GLB -> convert to OBJ
+- 檔案: Candles.glb
+- sha256: `2cd72a19212e44baca9d36665e5c6c1650df7c6cf9ada9a2aa9637f6a6510a4e`
+
 ## quaternius_scifi
 - 角色: 風格化備援 — 若需要更乾淨 game-ready 拓樸的 sci-fi 機器人。僅在 NASA 機體拓樸不利著色時啟用。
 - 授權: CC0
