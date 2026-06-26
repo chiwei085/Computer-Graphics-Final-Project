@@ -8,6 +8,9 @@
 #include "future_gaze/scene/tf_tree.hpp"
 
 void RunPhysicsTests();
+void RunGeometryTests();
+void RunCameraTests();
+void RunSceneInvariantTests();
 
 namespace
 {
@@ -122,10 +125,13 @@ void TestWorldVectorMatchesQuatConvention() {
 
 int main() {
     RunPhysicsTests();
+    RunGeometryTests();
+    RunCameraTests();
     TestLifecycleAndLookup();
     TestReparentRejectsCycles();
     TestLocalMatrixOrder();
     TestDirtyWorldCache();
     TestWorldVectorMatchesQuatConvention();
+    RunSceneInvariantTests();
     return 0;
 }

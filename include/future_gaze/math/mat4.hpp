@@ -33,6 +33,12 @@ public:
     }
     [[nodiscard]] Vec3 TransformPoint(const Vec3& value) const noexcept;
     [[nodiscard]] Vec3 TransformVector(const Vec3& value) const noexcept;
+    [[nodiscard]] Vec3 TransformDirection(const Vec3& value) const noexcept;
+    [[nodiscard]] Vec3 Right() const noexcept;
+    [[nodiscard]] Vec3 Up() const noexcept;
+    [[nodiscard]] Vec3 Forward() const noexcept;
+    [[nodiscard]] Vec3 Translation() const noexcept;
+    [[nodiscard]] Mat4 InverseRigid() const noexcept;
     [[nodiscard]] Mat4 operator*(const Mat4& rhs) const noexcept;
 
 private:

@@ -60,11 +60,21 @@ target_link_libraries(future_gaze
 enable_testing()
 
 add_executable(future_gaze_tests
+    tests/camera_tests.cpp
+    tests/geometry_tests.cpp
     tests/physics_tests.cpp
+    tests/scene_invariant_tests.cpp
     tests/tf_tree_tests.cpp
+    src/camera/orbit_camera.cpp
+    src/render/material.cpp
+    src/render/mesh.cpp
+    src/render/texture.cpp
     src/math/mat4.cpp
     src/math/quat.cpp
     src/physics/physics_world.cpp
+    src/scene/scene_graph.cpp
+    src/scene/scene_node.cpp
+    src/scene/story_props.cpp
     src/scene/tf_tree.cpp
 )
 
@@ -78,6 +88,12 @@ target_compile_options(future_gaze_tests
         -Wall
         -Wextra
         -Wpedantic
+)
+
+target_link_libraries(future_gaze_tests
+    PRIVATE
+        OpenGL::GL
+        GLUT::GLUT
 )
 
 add_test(NAME future_gaze_tests COMMAND future_gaze_tests)

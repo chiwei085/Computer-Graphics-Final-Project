@@ -67,6 +67,7 @@ private:
     void UpdateTableTransition(float delta_seconds);
     void StartTableRestage(float target_yaw_deg);
     void SnapTableStage(float yaw_deg);
+    [[nodiscard]] OrbitCamera::CameraPose CameraFollowPoseForRestage() const;
     void UpdateCameraRestage(float delta_seconds);
     void RefreshZonePaletteCache();
     void ApplyLighting() const;
@@ -107,12 +108,11 @@ private:
     float table_to_yaw_ = 0.0f;
 
     // Camera follow that rides the re-stage but deliberately out of sync: on
-    // G-exit the camera waits a beat (table swing reads first), then glides
-    // back to the pose saved on G-enter. Every G-enter is treated as a fresh
-    // start.
+    // G-exit the camera waits a beat (table swing reads first), then glides to
+    // a pose recomputed from the gaze bearing and restaged table position.
     bool camera_restage_pending_ = false;
+    bool camera_home_pending_ = false;
     float camera_restage_delay_ = 0.0f;
-    OrbitCamera::CameraPose saved_free_pose_;
     Mesh receiver_mesh_{Mesh::Cube()};
     // Darkened so the floor sits below the hero objects in brightness instead
     // of out-shining them. Combined with distance fog (see Render) this turns

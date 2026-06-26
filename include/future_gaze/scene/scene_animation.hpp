@@ -67,6 +67,13 @@ private:
         MemoryKind kind = MemoryKind::Panel;
     };
 
+    struct BlindRest
+    {
+        TfHandle handle{};
+        Transform local;
+        int slot = 0;
+    };
+
     struct DanceRest
     {
         TfHandle handle{};
@@ -77,6 +84,7 @@ private:
     struct StaticPhysicsBinding
     {
         physics::BodyId body{};
+        TfHandle root{};
         Vec3 local_position{};
         float local_yaw_deg = 0.0f;
     };
@@ -88,8 +96,11 @@ private:
 
     // Dinner scene root — rotates with camera yaw; needed for collision frame.
     TfHandle table_root_{};
+    TfHandle props_root_{};
     Vec3 last_table_pos_{1.0e30f, 1.0e30f, 1.0e30f};
+    Vec3 last_props_pos_{1.0e30f, 1.0e30f, 1.0e30f};
     float last_table_yaw_ = 1.0e30f;
+    float last_props_yaw_ = 1.0e30f;
 
     // Self-rotating iris ring + the eye it lives on.
     TfHandle circuit_ring_{};
@@ -110,6 +121,9 @@ private:
     // Gaze-driven representative fragments.
     std::vector<FutureRest> future_fragments_;
     std::vector<MemoryRest> memory_fragments_;
+    std::vector<BlindRest> blind_backdrop_;
+    std::vector<BlindRest> future_backdrop_;
+    std::vector<BlindRest> memory_backdrop_;
     std::vector<DanceRest> robonaut_dance_joints_;
     std::vector<StaticPhysicsBinding> static_physics_;
     KeyTrack unfold_;  // shared keyframed open/close curve for the panels
@@ -123,6 +137,7 @@ private:
                                              float yaw_deg);
     [[nodiscard]] float FutureWeight() const;
     [[nodiscard]] float MemoryWeight() const;
+    [[nodiscard]] float BlindWeight() const;
 };
 
 }  // namespace future_gaze

@@ -1,8 +1,10 @@
 #pragma once
 
+#include "future_gaze/math/geometry.hpp"
 #include "future_gaze/math/mat4.hpp"
 #include "future_gaze/math/quat.hpp"
 #include "future_gaze/math/vec3.hpp"
+#include "future_gaze/scene/room_bounds.hpp"
 
 namespace future_gaze
 {
@@ -28,6 +30,14 @@ public:
     [[nodiscard]] bool transitioning() const noexcept { return transitioning_; }
 
     [[nodiscard]] CameraPose CurrentPose() const noexcept;
+    [[nodiscard]] CameraPose HomePose() const noexcept;
+    [[nodiscard]] static CameraPose InitialPose() noexcept;
+    [[nodiscard]] Vec3 Eye() const;
+    [[nodiscard]] Vec3 EyeForPose(const CameraPose& pose) const;
+    [[nodiscard]] bool CurrentVolumeInsideRoom() const noexcept;
+    [[nodiscard]] bool PoseVolumeInsideRoom(
+        const CameraPose& pose) const noexcept;
+    [[nodiscard]] bool CurrentSubjectFramed() const noexcept;
     // Smoothly sweep (SmootherStep) from the current pose to `goal` over
     // `duration` seconds. User input is ignored until it completes.
     void StartTransitionTo(const CameraPose& goal, float duration);
@@ -50,9 +60,28 @@ public:
 
     void Zoom(float wheel_steps);
     void Reset();
+    void SetProjection(float fov_y_radians, float aspect, float near_plane);
+    void SetRoomBounds(RoomBounds bounds);
+    void SetFraming(CameraFraming framing);
 
 private:
-    [[nodiscard]] Vec3 Eye() const;
+    struct SolveResult
+    {
+        CameraPose pose{};
+        bool inside = false;
+        bool subject_framed = false;
+    };
+
+    void ApplyPose(const CameraPose& pose) noexcept;
+    [[nodiscard]] CameraPose ConstrainPose(CameraPose pose) const noexcept;
+    [[nodiscard]] SolveResult SolvePose(CameraPose pose,
+                                        bool preserve_view) const noexcept;
+    [[nodiscard]] CameraPose FramedPose(CameraPose seed) const noexcept;
+    [[nodiscard]] CameraPose PoseFromEyeTarget(Vec3 eye,
+                                               Vec3 target) const noexcept;
+    [[nodiscard]] bool SubjectInsideFrustum(
+        const CameraPose& pose) const noexcept;
+    [[nodiscard]] Vec3 ViewDirection(const CameraPose& pose) const noexcept;
 
     // Orbit
     bool dragging_ = false;
@@ -76,6 +105,11 @@ private:
     CameraPose transition_to_;
 
     Vec3 target_{0.0f, 1.5f, -0.5f};
+    RoomBounds room_bounds_{DefaultRoomBounds()};
+    CameraFraming framing_{DefaultRoomBounds().DefaultFraming()};
+    float fov_y_radians_ = DegToRad(55.0f);
+    float aspect_ = 16.0f / 9.0f;
+    float near_plane_ = 0.1f;
 };
 
 }  // namespace future_gaze

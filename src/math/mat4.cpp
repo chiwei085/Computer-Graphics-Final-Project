@@ -74,6 +74,35 @@ Vec3 Mat4::TransformVector(const Vec3& value) const noexcept {
         values_[2] * value.x + values_[6] * value.y + values_[10] * value.z};
 }
 
+Vec3 Mat4::TransformDirection(const Vec3& value) const noexcept {
+    return Normalize(TransformVector(value));
+}
+
+Vec3 Mat4::Right() const noexcept {
+    return {values_[0], values_[1], values_[2]};
+}
+
+Vec3 Mat4::Up() const noexcept {
+    return {values_[4], values_[5], values_[6]};
+}
+
+Vec3 Mat4::Forward() const noexcept {
+    return {-values_[8], -values_[9], -values_[10]};
+}
+
+Vec3 Mat4::Translation() const noexcept {
+    return {values_[12], values_[13], values_[14]};
+}
+
+Mat4 Mat4::InverseRigid() const noexcept {
+    const Vec3 r = Right();
+    const Vec3 u = Up();
+    const Vec3 b = {values_[8], values_[9], values_[10]};
+    const Vec3 t = Translation();
+    return Mat4{{r.x, u.x, b.x, 0.0f, r.y, u.y, b.y, 0.0f, r.z, u.z, b.z, 0.0f,
+                 -Dot(r, t), -Dot(u, t), -Dot(b, t), 1.0f}};
+}
+
 Mat4 Mat4::operator*(const Mat4& rhs) const noexcept {
     std::array<float, 16> out{};
     for (int col = 0; col < 4; ++col) {

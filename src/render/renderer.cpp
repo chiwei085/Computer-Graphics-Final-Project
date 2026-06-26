@@ -37,6 +37,8 @@ constexpr float kTableRestageSeconds = 1.4f;
 // duration, arriving after the table has settled.
 constexpr float kCameraRestageDelay = 0.55f;
 constexpr float kCameraTransitionSeconds = 1.7f;
+constexpr float kCameraFovYDeg = 55.0f;
+constexpr float kCameraNearPlane = 0.1f;
 
 // Three-point stylised rig.
 //   KEY  : warm point light, upper front-left — shapes the primary volume from
@@ -146,6 +148,18 @@ Vec3 RotateAroundY(Vec3 v, float radians) {
     return {v.x * c + v.z * s, v.y, -v.x * s + v.z * c};
 }
 
+float WrapDeg180(float deg) {
+    deg = std::fmod(deg + 180.0f, 360.0f);
+    if (deg < 0.0f) {
+        deg += 360.0f;
+    }
+    return deg - 180.0f;
+}
+
+float NearestEquivalentYaw(float target_deg, float from_deg) {
+    return from_deg + WrapDeg180(target_deg - from_deg);
+}
+
 }  // namespace
 
 void Renderer::Initialize() {
@@ -246,6 +260,13 @@ void Renderer::Initialize() {
         ObjLoader::Load(obj_dir / "Mug_With_Office_Tool.obj");
     auto closed_umbrella = ObjLoader::Load(obj_dir / "Closed_Umbrella.obj");
     auto zz_plant = ObjLoader::Load(obj_dir / "Zz_Plant.obj");
+    auto cyberpunk_platform =
+        ObjLoader::Load(obj_dir / "Cyberpunk_Platform.obj");
+    auto sci_fi_floor_tile = ObjLoader::Load(obj_dir / "Sci_Fi_Floor_Tile.obj");
+    auto sci_fi_wall_3 = ObjLoader::Load(obj_dir / "Sci_Fi_Wall_3.obj");
+    auto curtains_double = ObjLoader::Load(obj_dir / "Curtains_Double.obj");
+    auto lamp_with_shade = ObjLoader::Load(obj_dir / "Lamp_With_Shade.obj");
+    auto candles = ObjLoader::Load(obj_dir / "Candles.obj");
 
     builders::StoryPropAssets story_assets{
         .infrared_camera = std::move(infrared_camera),
@@ -261,16 +282,28 @@ void Renderer::Initialize() {
         .mug_office_tool = std::move(mug_office_tool),
         .closed_umbrella = std::move(closed_umbrella),
         .zz_plant = std::move(zz_plant),
+        .cyberpunk_platform = std::move(cyberpunk_platform),
+        .sci_fi_floor_tile = std::move(sci_fi_floor_tile),
+        .sci_fi_wall_3 = std::move(sci_fi_wall_3),
+        .curtains_double = std::move(curtains_double),
+        .lamp_with_shade = std::move(lamp_with_shade),
+        .candles = std::move(candles),
     };
 
     // Build the full scene graph.
     scene_root_ = std::make_unique<SceneGraph>("root");
     SceneNode& root = scene_root_->Root();
+    camera_.SetRoomBounds(DefaultRoomBounds());
+    camera_.SetProjection(
+        DegToRad(kCameraFovYDeg),
+        static_cast<float>(width_) / static_cast<float>(height_),
+        kCameraNearPlane);
     builders::BuildDinnerTable(root, tex_set);
     builders::BuildPredictionCore(root, tex_set);
     builders::BuildAiCharacters(root, std::move(robonaut), std::move(ingenuity),
                                 tex_set);
     builders::BuildStoryProps(root, std::move(story_assets));
+    builders::BuildEnvironmentShell(root);
 
     gaze_.Bind(*scene_root_);
     animation_.Bind(*scene_root_, gaze_);
@@ -287,6 +320,10 @@ void Renderer::Resize(int width, int height) {
     width_ = std::max(1, width);
     height_ = std::max(1, height);
     glViewport(0, 0, width_, height_);
+    camera_.SetProjection(
+        DegToRad(kCameraFovYDeg),
+        static_cast<float>(width_) / static_cast<float>(height_),
+        kCameraNearPlane);
     ApplyProjection();
 }
 
@@ -362,7 +399,7 @@ void Renderer::StartTableRestage(float target_yaw_deg) {
         table_from_yaw_ = 0.0f;
     }
     table_to_pos_ = goal.position;
-    table_to_yaw_ = goal.yaw_deg;
+    table_to_yaw_ = NearestEquivalentYaw(goal.yaw_deg, table_from_yaw_);
     table_transition_t_ = 0.0f;
     table_transition_active_ = true;
 }
@@ -393,10 +430,21 @@ void Renderer::UpdateCameraRestage(float delta_seconds) {
         return;
     }
     camera_restage_pending_ = false;
-    // Return to the free-cam vantage saved on G-enter: always in front of the
-    // eye. The table swing fires first (shorter delay); the camera glides back
-    // to the familiar spectator view after.
-    camera_.StartTransitionTo(saved_free_pose_, kCameraTransitionSeconds);
+    const OrbitCamera::CameraPose goal = camera_home_pending_
+                                             ? camera_.HomePose()
+                                             : CameraFollowPoseForRestage();
+    camera_home_pending_ = false;
+    camera_.StartTransitionTo(goal, kCameraTransitionSeconds);
+}
+
+OrbitCamera::CameraPose Renderer::CameraFollowPoseForRestage() const {
+    // The table root moves as a rigid restage group; aim at the living volume
+    // above the tabletop, not at the root/floor. Pulling the camera from the
+    // eye's own gaze direction keeps all three zones using the same geometric
+    // rule while still producing different views.
+    const Vec3 table_focus = table_to_pos_ + Vec3{0.0f, 1.10f, 0.0f};
+    return OrbitCamera::GazePose(gaze_.Origin(), gaze_.Direction(),
+                                 table_focus);
 }
 
 void Renderer::RefreshZonePaletteCache() {
@@ -486,6 +534,7 @@ void Renderer::ResetCamera() {
     camera_.Reset();
     SnapTableStage(0.0f);
     camera_restage_pending_ = false;
+    camera_home_pending_ = false;
 }
 
 void Renderer::ToggleGazeControlMode() {
@@ -504,12 +553,24 @@ void Renderer::SetGazeControlMode(bool enabled) {
         // cancel any in-flight restage. Every entry is treated as a fresh start
         // regardless of how many G presses have happened before.
         camera_restage_pending_ = false;
-        saved_free_pose_ = camera_.CurrentPose();
+        camera_home_pending_ = false;
     }
     else {
-        // Exiting gaze-drag: swing the dinner group to the new gaze bearing,
-        // then return the camera (desynced) to the pose snapshotted on entry.
-        StartTableRestage(gaze_.YawOffsetDeg());
+        // Exiting gaze-drag: swing the dinner group to the new gaze bearing.
+        // A completed 360-degree cycle homes the whole presentation instead of
+        // preserving the accumulated yaw (e.g. 366°) as a new side view.
+        const bool completed_cycle_to_foresight =
+            gaze_.ActiveZone() == GazeZone::kForesight &&
+            std::abs(gaze_.YawOffsetDeg()) >= 300.0f;
+        if (completed_cycle_to_foresight) {
+            StartTableRestage(0.0f);
+            gaze_.ResetAim();
+            camera_home_pending_ = true;
+        }
+        else {
+            StartTableRestage(gaze_.YawOffsetDeg());
+            camera_home_pending_ = false;
+        }
         camera_restage_pending_ = true;
         camera_restage_delay_ = kCameraRestageDelay;
     }
@@ -522,6 +583,7 @@ void Renderer::ToggleGazeDebug() {
 void Renderer::ResetGazeAim() {
     gaze_.ResetAim();
     StartTableRestage(0.0f);
+    camera_home_pending_ = true;
     // If not in gaze-drag mode, re-arm the camera to return to the saved pose
     // so it follows the table swinging back to origin.
     if (!gaze_.control_mode()) {
@@ -577,7 +639,8 @@ void Renderer::ApplyLighting() const {
 void Renderer::ApplyProjection() const {
     const float aspect =
         static_cast<float>(width_) / static_cast<float>(height_);
-    const Mat4 proj = Mat4::Perspective(DegToRad(55.0f), aspect, 0.1f, 50.0f);
+    const Mat4 proj = Mat4::Perspective(DegToRad(kCameraFovYDeg), aspect,
+                                        kCameraNearPlane, 50.0f);
     glMatrixMode(GL_PROJECTION);
     glLoadMatrixf(proj.Data());
 }

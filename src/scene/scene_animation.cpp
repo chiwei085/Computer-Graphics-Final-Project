@@ -123,6 +123,7 @@ void SceneAnimation::Bind(SceneGraph& graph, const GazeController& gaze) {
 
     // ── Resolve animation targets ────────────────────────────────────────────
     table_root_ = FindOrWarn(graph, "dinner_scene");
+    props_root_ = FindOrWarn(graph, "story_props");
     circuit_ring_ = FindOrWarn(graph, names::kCircuitRing);
     ingenuity_ = FindOrWarn(graph, names::kIngenuity);
     robonaut_ = FindOrWarn(graph, names::kRobonaut);
@@ -185,6 +186,15 @@ void SceneAnimation::Bind(SceneGraph& graph, const GazeController& gaze) {
         }
         memory_fragments_.push_back(r);
     }
+    auto collect_backdrop = [&](const char* prefix,
+                                std::vector<BlindRest>& dest) {
+        for (TfHandle n : CollectOrWarn(graph, prefix)) {
+            dest.push_back({n, tf_->Local(n), ParseSlotIndex(tf_->Name(n))});
+        }
+    };
+    collect_backdrop("blind_bg_", blind_backdrop_);
+    collect_backdrop("fgbg_", future_backdrop_);
+    collect_backdrop("mgbg_", memory_backdrop_);
 
     // Shared keyframed unfold curve: closed → spring open → hold → close.
     unfold_.Add(0.0f, 0.0f, ease::SmootherStep)
@@ -200,17 +210,33 @@ void SceneAnimation::BuildPhysicsWorld() {
     physics_.Clear();
     static_physics_.clear();
 
-    auto add_table_static = [&](physics::Collider2D collider,
-                                Vec3 local_position, float local_yaw_deg,
-                                physics::HeightRange height) {
+    auto add_root_static = [&](TfHandle root, physics::Collider2D collider,
+                               Vec3 local_position, float local_yaw_deg,
+                               physics::HeightRange height) {
         const physics::BodyId body = physics_.AddStatic(
             collider, physics::Transform2D{local_position, local_yaw_deg},
             height, kObstacleMask);
-        static_physics_.push_back({body, local_position, local_yaw_deg});
+        static_physics_.push_back({body, root, local_position, local_yaw_deg});
+    };
+    auto add_table_static = [&](physics::Collider2D collider,
+                                Vec3 local_position, float local_yaw_deg,
+                                physics::HeightRange height) {
+        add_root_static(table_root_, collider, local_position, local_yaw_deg,
+                        height);
+    };
+    auto add_story_static = [&](physics::Collider2D collider,
+                                Vec3 local_position, float local_yaw_deg,
+                                physics::HeightRange height) {
+        add_root_static(props_root_, collider, local_position, local_yaw_deg,
+                        height);
     };
 
-    // Dinner table blockers, authored in dinner_scene local space.
-    add_table_static(physics::Collider2D::Box(1.05f, 0.475f), {}, 0.0f,
+    // Dinner table blockers, authored in dinner_scene local space. Mesh::Cube
+    // spans [-1, 1], so the tabletop's visual half-extents match the scale
+    // used in BuildDinnerTable ({2.1, 0.04, 0.95}). Keeping physics at the same
+    // footprint prevents the Robonaut from walking into the rendered top while
+    // the collision world still thinks it is outside.
+    add_table_static(physics::Collider2D::Box(2.10f, 0.95f), {}, 0.0f,
                      {0.70f, 0.86f});
     for (const Vec3 p : {Vec3{-1.98f, 0.0f, -0.88f}, Vec3{1.98f, 0.0f, -0.88f},
                          Vec3{-1.98f, 0.0f, 0.88f}, Vec3{1.98f, 0.0f, 0.88f}}) {
@@ -240,6 +266,28 @@ void SceneAnimation::BuildPhysicsWorld() {
                          chair.base + back_local, chair.yaw_deg,
                          {0.45f, 1.02f});
     }
+
+    // Background set dressing, authored in story_props local space.
+    add_story_static(physics::Collider2D::Box(0.72f, 0.18f),
+                     {2.62f, 0.0f, -1.92f}, 160.0f, {0.0f, 1.95f});
+    add_story_static(physics::Collider2D::Box(1.35f, 0.40f),
+                     {-0.10f, 0.0f, -2.02f}, 0.0f, {0.0f, 0.22f});
+    add_story_static(physics::Collider2D::Circle(0.22f), {-3.18f, 0.0f, -1.56f},
+                     0.0f, {0.0f, 1.85f});
+    add_story_static(physics::Collider2D::Circle(0.24f), {-2.20f, 0.0f, -1.92f},
+                     0.0f, {0.0f, 1.65f});
+    add_story_static(physics::Collider2D::Circle(0.22f), {2.18f, 0.0f, -1.92f},
+                     0.0f, {0.0f, 1.65f});
+    add_story_static(physics::Collider2D::Circle(0.22f), {3.18f, 0.0f, -1.56f},
+                     0.0f, {0.0f, 1.55f});
+    add_story_static(physics::Collider2D::Box(1.30f, 0.08f),
+                     {0.0f, 0.0f, 2.26f}, 0.0f, {0.0f, 1.90f});
+    add_story_static(physics::Collider2D::Circle(0.24f), {-1.92f, 0.0f, 1.96f},
+                     0.0f, {0.0f, 1.55f});
+    add_story_static(physics::Collider2D::Circle(0.20f), {1.72f, 0.0f, 1.76f},
+                     0.0f, {0.70f, 1.15f});
+    add_story_static(physics::Collider2D::Box(1.58f, 0.78f),
+                     {0.0f, 0.0f, 2.78f}, 0.0f, {0.0f, 1.28f});
 
     (void)physics_.AddStatic(physics::Collider2D::Circle(2.12f),
                              physics::Transform2D{eye_center_, 0.0f},
@@ -272,22 +320,42 @@ void SceneAnimation::BuildPhysicsWorld() {
 }
 
 void SceneAnimation::SyncPhysicsStaticObstacles() {
-    Vec3 root_pos{};
-    float root_yaw = 0.0f;
+    Vec3 table_pos{};
+    float table_yaw = 0.0f;
     if (tf_ != nullptr && tf_->Contains(table_root_)) {
         const Transform table = tf_->Local(table_root_);
-        root_pos = table.position;
-        root_yaw = table.euler_deg.y;
+        table_pos = table.position;
+        table_yaw = table.euler_deg.y;
+    }
+    Vec3 props_pos{};
+    float props_yaw = 0.0f;
+    if (tf_ != nullptr && tf_->Contains(props_root_)) {
+        const Transform props = tf_->Local(props_root_);
+        props_pos = props.position;
+        props_yaw = props.euler_deg.y;
     }
 
-    if (root_yaw == last_table_yaw_ && root_pos.x == last_table_pos_.x &&
-        root_pos.z == last_table_pos_.z) {
+    if (table_yaw == last_table_yaw_ && props_yaw == last_props_yaw_ &&
+        table_pos.x == last_table_pos_.x && table_pos.z == last_table_pos_.z &&
+        props_pos.x == last_props_pos_.x && props_pos.z == last_props_pos_.z) {
         return;
     }
-    last_table_yaw_ = root_yaw;
-    last_table_pos_ = root_pos;
+    last_table_yaw_ = table_yaw;
+    last_table_pos_ = table_pos;
+    last_props_yaw_ = props_yaw;
+    last_props_pos_ = props_pos;
 
     for (const StaticPhysicsBinding& binding : static_physics_) {
+        Vec3 root_pos{};
+        float root_yaw = 0.0f;
+        if (binding.root == table_root_) {
+            root_pos = table_pos;
+            root_yaw = table_yaw;
+        }
+        else if (binding.root == props_root_) {
+            root_pos = props_pos;
+            root_yaw = props_yaw;
+        }
         const Vec3 world_position =
             root_pos + RotateDinnerLocal(binding.local_position, root_yaw);
         physics_.SetBodyTransform(binding.body, world_position,
@@ -537,14 +605,42 @@ void SceneAnimation::BuildChannels() {
         }
     });
 
+    // ── Blindspot / Future / Memory backdrop channels
+    // Each backdrop animates in when its zone is active: scale from 4% → 100%
+    // and rises into position. Blind zone is default-on (BlindWeight
+    // returns 1.0 when gaze is absent); Future and Memory default to 0.
+    auto add_backdrop_channel =
+        [this](const char* name, float (SceneAnimation::*weight_fn)() const,
+               std::vector<BlindRest>* backdrop, float rise, float slot_coeff) {
+            animator_.Add(name, [this, weight_fn, backdrop, rise, slot_coeff](
+                                    float, float) {
+                const float w = (this->*weight_fn)();
+                for (const BlindRest& r : *backdrop) {
+                    const float open =
+                        ease::Clamp01(w * (1.08f - slot_coeff * r.slot));
+                    Transform local = r.local;
+                    local.scale = r.local.scale * (0.04f + 0.96f * open);
+                    local.position = r.local.position +
+                                     Vec3{0.0f, -rise * (1.0f - open), 0.0f};
+                    tf_->SetLocal(r.handle, local);
+                }
+            });
+        };
+    add_backdrop_channel("gaze_blind_backdrop", &SceneAnimation::BlindWeight,
+                         &blind_backdrop_, 0.20f, 0.035f);
+    add_backdrop_channel("gaze_future_backdrop", &SceneAnimation::FutureWeight,
+                         &future_backdrop_, 0.40f, 0.030f);
+    add_backdrop_channel("gaze_memory_backdrop", &SceneAnimation::MemoryWeight,
+                         &memory_backdrop_, 0.40f, 0.030f);
+
     // ── Patrol + collision physics
     // ──────────────────────────────────────── Spring-mass-damper (ζ ≈ 0.71)
     // follows an elliptical perimeter; the new physics world owns the actual
     // swept movement so frame spikes cannot jump through table/chair blockers.
     animator_.Add("robonaut_patrol", [this](float t, float dt) {
-        constexpr float kRx = 2.4f;
-        constexpr float kRz = 1.8f;
-        constexpr float kCz = 0.5f;
+        constexpr float kRx = 3.05f;
+        constexpr float kRz = 1.95f;
+        constexpr float kCz = 0.62f;
         constexpr float kOmega = 0.08f;
         constexpr float kSpring = 2.0f;
         constexpr float kDamp = 2.0f;
@@ -717,6 +813,13 @@ float SceneAnimation::MemoryWeight() const {
         return 0.0f;
     }
     return gaze_->ZoneWeight(GazeZone::kLonging);
+}
+
+float SceneAnimation::BlindWeight() const {
+    if (gaze_ == nullptr) {
+        return 1.0f;
+    }
+    return gaze_->ZoneWeight(GazeZone::kBlindspot);
 }
 
 }  // namespace future_gaze

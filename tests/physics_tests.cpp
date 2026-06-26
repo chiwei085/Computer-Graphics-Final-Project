@@ -149,6 +149,26 @@ void TestTransformedStaticColliderMovesWithRoot() {
                 "moved-back collider stops at inflated edge");
 }
 
+void TestTabletopFootprintDepenetratesCharacterOutsideVisualEdge() {
+    PhysicsWorld world;
+    const BodyId tabletop = world.AddStatic(
+        Collider2D::Box(2.10f, 0.95f), Transform2D{{0.0f, 0.0f, 0.0f}, 0.0f},
+        HeightRange{0.70f, 0.86f});
+    Require(tabletop.IsValid(), "full tabletop blocker is valid");
+    const BodyId character =
+        world.AddKinematic(Collider2D::Capsule(0.38f, 0.17f),
+                           {2.40f, 0.85f, 0.50f}, HeightRange{0.0f, 1.80f});
+
+    const MoveResult result = world.MoveKinematic(character, {}, 0.016f);
+
+    Require(!result.contacts.empty(),
+            "character initially overlapping visual tabletop is detected");
+    Require(result.final_position.x >= 2.649f ||
+                result.final_position.z >= 1.499f ||
+                result.final_position.z <= -1.499f,
+            "character is pushed outside rendered tabletop footprint");
+}
+
 }  // namespace
 
 void RunPhysicsTests() {
@@ -158,4 +178,5 @@ void RunPhysicsTests() {
     TestHeightRangesFilterAerialSensors();
     TestCircleSweepDoesNotTunnelThroughChair();
     TestTransformedStaticColliderMovesWithRoot();
+    TestTabletopFootprintDepenetratesCharacterOutsideVisualEdge();
 }

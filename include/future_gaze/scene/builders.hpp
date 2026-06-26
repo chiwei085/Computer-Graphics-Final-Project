@@ -34,6 +34,12 @@ struct StoryPropAssets
     std::vector<ModelMesh> mug_office_tool;
     std::vector<ModelMesh> closed_umbrella;
     std::vector<ModelMesh> zz_plant;
+    std::vector<ModelMesh> cyberpunk_platform;
+    std::vector<ModelMesh> sci_fi_floor_tile;
+    std::vector<ModelMesh> sci_fi_wall_3;
+    std::vector<ModelMesh> curtains_double;
+    std::vector<ModelMesh> lamp_with_shade;
+    std::vector<ModelMesh> candles;
 };
 
 // Dinner table with chairs, place settings, cake, flowers, letter.
@@ -49,5 +55,9 @@ SceneNode& BuildAiCharacters(SceneNode& parent, std::vector<ModelMesh> robonaut,
 
 // Imported story props: accident chain, memory altars, quiet blind objects.
 SceneNode& BuildStoryProps(SceneNode& parent, StoryPropAssets assets);
+
+// Fixed world-space room shells/backdrops. These are intentionally separate
+// from story_props so G-key restaging cannot rotate walls into the camera.
+SceneNode& BuildEnvironmentShell(SceneNode& parent);
 
 }  // namespace future_gaze::builders
