@@ -4,7 +4,6 @@
 #include "future_gaze/math/mat4.hpp"
 #include "future_gaze/math/quat.hpp"
 #include "future_gaze/math/vec3.hpp"
-#include "future_gaze/scene/room_bounds.hpp"
 
 namespace future_gaze
 {

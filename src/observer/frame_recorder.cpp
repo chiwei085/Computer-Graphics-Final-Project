@@ -1,15 +1,15 @@
-#include "future_gaze/observer/frame_recorder.hpp"
-
 #include <GL/freeglut.h>
 
 #include <cerrno>
+#include <charconv>
 #include <cstdint>
-#include <cstdio>
 #include <cstdlib>
-#include <cstring>
 #include <fstream>
+#include <iostream>
 #include <limits>
 #include <string>
+#include <string_view>
+#include <system_error>
 #include <vector>
 
 #include "future_gaze/observer/frame_stream.hpp"
@@ -24,8 +24,8 @@ bool EnvFlag(const char* name) {
     if (value == nullptr || value[0] == '\0') {
         return false;
     }
-    return std::strcmp(value, "0") != 0 && std::strcmp(value, "false") != 0 &&
-           std::strcmp(value, "FALSE") != 0;
+    const std::string_view flag{value};
+    return flag != "0" && flag != "false" && flag != "FALSE";
 }
 
 double EnvDouble(const char* name, double fallback) {
@@ -33,9 +33,11 @@ double EnvDouble(const char* name, double fallback) {
     if (value == nullptr || value[0] == '\0') {
         return fallback;
     }
-    char* end = nullptr;
-    const double parsed = std::strtod(value, &end);
-    return (end != value && parsed > 0.0) ? parsed : fallback;
+    double parsed = fallback;
+    const std::string_view text{value};
+    const auto result =
+        std::from_chars(text.data(), text.data() + text.size(), parsed);
+    return (result.ptr != text.data() && parsed > 0.0) ? parsed : fallback;
 }
 
 std::uint64_t EnvU64(const char* name, std::uint64_t fallback) {
@@ -43,9 +45,11 @@ std::uint64_t EnvU64(const char* name, std::uint64_t fallback) {
     if (value == nullptr || value[0] == '\0') {
         return fallback;
     }
-    char* end = nullptr;
-    const unsigned long long parsed = std::strtoull(value, &end, 10);
-    return (end != value) ? static_cast<std::uint64_t>(parsed) : fallback;
+    std::uint64_t parsed = fallback;
+    const std::string_view text{value};
+    const auto result =
+        std::from_chars(text.data(), text.data() + text.size(), parsed);
+    return (result.ptr != text.data()) ? parsed : fallback;
 }
 
 class FrameRecorder
@@ -114,9 +118,8 @@ public:
 
         ++frame_index_;
         if (frame_index_ >= max_frames_) {
-            std::fprintf(
-                stderr, "[recorder] wrote %llu deterministic frames; exiting\n",
-                static_cast<unsigned long long>(frame_index_));
+            std::cerr << "[recorder] wrote " << frame_index_
+                      << " deterministic frames; exiting\n";
             std::exit(EXIT_SUCCESS);
         }
     }
@@ -132,12 +135,9 @@ private:
         fps_ = EnvDouble("FUTURE_GAZE_RECORD_FPS", 30.0);
         max_frames_ = EnvU64("FUTURE_GAZE_RECORD_MAX_FRAMES", 1);
         fixed_dt_ = EnvFlag("FUTURE_GAZE_RECORD_FIXED_DT");
-        std::fprintf(stderr,
-                     "[recorder] enabled fifo='%s' fps=%.3f max_frames=%llu "
-                     "fixed_dt=%d\n",
-                     fifo_path_.c_str(), fps_,
-                     static_cast<unsigned long long>(max_frames_),
-                     fixed_dt_ ? 1 : 0);
+        std::cerr << "[recorder] enabled fifo='" << fifo_path_
+                  << "' fps=" << fps_ << " max_frames=" << max_frames_
+                  << " fixed_dt=" << (fixed_dt_ ? 1 : 0) << '\n';
     }
 
     void OpenIfNeeded(int width, int height) {
@@ -147,8 +147,9 @@ private:
 
         stream_.open(fifo_path_, std::ios::binary | std::ios::out);
         if (!stream_.is_open()) {
-            std::fprintf(stderr, "[recorder] cannot open '%s': %s\n",
-                         fifo_path_.c_str(), std::strerror(errno));
+            const std::error_code open_error{errno, std::generic_category()};
+            std::cerr << "[recorder] cannot open '" << fifo_path_
+                      << "': " << open_error.message() << '\n';
             failed_ = true;
             return;
         }
@@ -170,7 +171,7 @@ private:
     }
 
     void Fail(const char* message) {
-        std::fprintf(stderr, "[recorder] %s\n", message);
+        std::cerr << "[recorder] " << message << '\n';
         failed_ = true;
     }
 

@@ -16,7 +16,6 @@ find_package(OpenGL REQUIRED)
 find_package(GLUT REQUIRED)
 
 add_executable(future_gaze
-    src/app.cpp
     src/camera/orbit_camera.cpp
     src/glut_window.cpp
     src/main.cpp
@@ -29,7 +28,6 @@ add_executable(future_gaze
     src/render/renderer.cpp
     src/render/texture.cpp
     src/scene/scene_graph.cpp
-    src/scene/scene_node.cpp
     src/scene/tf_tree.cpp
     src/scene/scene_animation.cpp
     src/scene/dinner_table.cpp
@@ -73,7 +71,6 @@ add_executable(future_gaze_tests
     src/math/quat.cpp
     src/physics/physics_world.cpp
     src/scene/scene_graph.cpp
-    src/scene/scene_node.cpp
     src/scene/story_props.cpp
     src/scene/tf_tree.cpp
 )

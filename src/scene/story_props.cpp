@@ -3,11 +3,10 @@
 #include <utility>
 #include <vector>
 
+#include "future_gaze/math/geometry.hpp"
 #include "future_gaze/render/material.hpp"
 #include "future_gaze/render/mesh.hpp"
 #include "future_gaze/scene/builders.hpp"
-#include "future_gaze/scene/node_names.hpp"
-#include "future_gaze/scene/room_bounds.hpp"
 
 namespace future_gaze::builders
 {

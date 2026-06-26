@@ -3,18 +3,32 @@
 #include <GL/freeglut.h>
 
 #include <algorithm>
-#include <cstdio>
+#include <charconv>
 #include <cstdlib>
 #include <fstream>
+#include <iostream>
 #include <sstream>
+#include <string_view>
 #include <utility>
 
 #ifdef FUTURE_GAZE_OBSERVER_TOOLS
-#include "future_gaze/observer/frame_recorder.hpp"
+#include "future_gaze/observer/frame_stream.hpp"
 #endif
 
 namespace future_gaze
 {
+
+namespace
+{
+
+float ParseFloatPrefix(std::string_view text, float fallback) {
+    float parsed = fallback;
+    const auto result =
+        std::from_chars(text.data(), text.data() + text.size(), parsed);
+    return (result.ptr != text.data()) ? parsed : fallback;
+}
+
+}  // namespace
 
 GlutWindow::GlutWindow(int width, int height, const char* title,
                        Renderer& renderer)
@@ -70,7 +84,7 @@ void GlutWindow::IdleCallback() {
 void GlutWindow::LoadAutomation() {
     if (const char* every = std::getenv("FUTURE_GAZE_LOG_EVERY")) {
         automation_log_interval_ =
-            std::max(0.0f, static_cast<float>(std::atof(every)));
+            std::max(0.0f, ParseFloatPrefix(every, 0.0f));
         automation_next_log_ = 0.0f;
     }
 
@@ -81,7 +95,7 @@ void GlutWindow::LoadAutomation() {
 
     std::ifstream file(path);
     if (!file.is_open()) {
-        std::fprintf(stderr, "[automation] cannot open '%s'\n", path);
+        std::cerr << "[automation] cannot open '" << path << "'\n";
         return;
     }
 
@@ -108,8 +122,8 @@ void GlutWindow::LoadAutomation() {
               [](const AutomationCommand& a, const AutomationCommand& b) {
                   return a.at_seconds < b.at_seconds;
               });
-    std::fprintf(stderr, "[automation] loaded %zu commands from '%s'\n",
-                 automation_.size(), path);
+    std::cerr << "[automation] loaded " << automation_.size()
+              << " commands from '" << path << "'\n";
 }
 
 void GlutWindow::UpdateAutomation(float delta_seconds) {
@@ -137,7 +151,7 @@ void GlutWindow::RunAutomationCommand(const AutomationCommand& command) {
         if (index >= command.args.size()) {
             return fallback;
         }
-        return static_cast<float>(std::atof(command.args[index].c_str()));
+        return ParseFloatPrefix(command.args[index], fallback);
     };
 
     if (command.op == "log") {
@@ -195,13 +209,12 @@ void GlutWindow::RunAutomationCommand(const AutomationCommand& command) {
         return;
     }
     if (command.op == "quit") {
-        std::fprintf(stderr, "[automation] quit at %.3fs\n",
-                     automation_elapsed_);
+        std::cerr << "[automation] quit at " << automation_elapsed_ << "s\n";
         std::exit(EXIT_SUCCESS);
     }
 
-    std::fprintf(stderr, "[automation] unknown command '%s' at %.3fs\n",
-                 command.op.c_str(), command.at_seconds);
+    std::cerr << "[automation] unknown command '" << command.op << "' at "
+              << command.at_seconds << "s\n";
 }
 
 void GlutWindow::KeyboardCallback(unsigned char key, int, int) {

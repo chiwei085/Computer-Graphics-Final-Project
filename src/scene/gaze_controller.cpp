@@ -2,10 +2,9 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstdio>
+#include <iostream>
 
 #include "future_gaze/math/quat.hpp"
-#include "future_gaze/scene/node_names.hpp"
 #include "future_gaze/scene/scene_graph.hpp"
 
 namespace future_gaze
@@ -37,9 +36,8 @@ void GazeController::Bind(SceneGraph& graph) {
     tf_ = &graph.tf();
     eye_root_ = graph.Find(names::kPredictionCore);
     if (!eye_root_.IsValid()) {
-        std::fprintf(stderr,
-                     "[GazeController] node '%s' not found; gaze disabled.\n",
-                     names::kPredictionCore);
+        std::cerr << "[GazeController] node '" << names::kPredictionCore
+                  << "' not found; gaze disabled.\n";
         return;
     }
     const Transform local = tf_->Local(eye_root_);

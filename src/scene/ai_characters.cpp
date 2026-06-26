@@ -6,7 +6,6 @@
 #include <utility>
 
 #include "future_gaze/scene/builders.hpp"
-#include "future_gaze/scene/node_names.hpp"
 
 namespace future_gaze::builders
 {
@@ -278,9 +277,10 @@ RobonautDanceTarget NodeForRole(RobonautDanceNodes& nodes,
 
 RobonautDanceRole ClassifyRobonautPart(const ModelMesh& part) {
     // The OBJ has no per-joint segmentation — the main cloth and spine frame
-    // each span the full body height. Splitting them across multiple pivot nodes
-    // causes visible tearing during animation. Safe assignment: everything goes
-    // to the whole-body Center node; only unambiguous helmet pieces get Head.
+    // each span the full body height. Splitting them across multiple pivot
+    // nodes causes visible tearing during animation. Safe assignment:
+    // everything goes to the whole-body Center node; only unambiguous helmet
+    // pieces get Head.
     const Vec3 center = part.mesh.Bounds().Center();
     if (center.y > 0.38f) {
         return RobonautDanceRole::Head;

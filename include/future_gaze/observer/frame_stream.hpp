@@ -31,4 +31,7 @@ struct FrameRecordHeader
 static_assert(sizeof(FrameStreamHeader) == 28);
 static_assert(sizeof(FrameRecordHeader) == 20);
 
+float ObserverDeltaSeconds(float fallback_delta_seconds);
+void RecordFramebuffer(int width, int height, float app_time_seconds);
+
 }  // namespace future_gaze::observer

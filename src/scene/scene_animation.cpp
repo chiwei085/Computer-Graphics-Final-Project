@@ -4,13 +4,12 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
-#include <cstdio>
+#include <iostream>
 #include <numbers>
 #include <string>
 #include <utility>
 
 #include "future_gaze/anim/easing.hpp"
-#include "future_gaze/scene/node_names.hpp"
 #include "future_gaze/scene/scene_graph.hpp"
 
 namespace future_gaze
@@ -44,10 +43,8 @@ constexpr physics::CollisionMask kEyeSafetyMask{kPhysicsEyeSafety,
 TfHandle FindOrWarn(SceneGraph& graph, const char* name) {
     const TfHandle handle = graph.Find(name);
     if (!handle.IsValid()) {
-        std::fprintf(stderr,
-                     "[SceneAnimation] node '%s' not found — its animation is "
-                     "disabled.\n",
-                     name);
+        std::cerr << "[SceneAnimation] node '" << name
+                  << "' not found - its animation is disabled.\n";
     }
     return handle;
 }
@@ -56,10 +53,8 @@ std::vector<TfHandle> CollectOrWarn(SceneGraph& graph, const char* prefix) {
     std::vector<TfHandle> out;
     graph.Collect(prefix, out);
     if (out.empty()) {
-        std::fprintf(stderr,
-                     "[SceneAnimation] no nodes matching '%s' — its animation "
-                     "is disabled.\n",
-                     prefix);
+        std::cerr << "[SceneAnimation] no nodes matching '" << prefix
+                  << "' - its animation is disabled.\n";
     }
     return out;
 }
@@ -763,9 +758,8 @@ void SceneAnimation::BindRobonautDance(SceneGraph& graph) {
     auto add = [&](const char* node_name, std::string role) {
         const TfHandle node = graph.Find(node_name);
         if (!node.IsValid()) {
-            std::fprintf(stderr,
-                         "[SceneAnimation] dance proxy node '%s' not found.\n",
-                         node_name);
+            std::cerr << "[SceneAnimation] dance proxy node '" << node_name
+                      << "' not found.\n";
             return;
         }
         robonaut_dance_joints_.push_back(

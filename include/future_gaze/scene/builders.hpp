@@ -4,7 +4,7 @@
 
 #include "future_gaze/render/obj_loader.hpp"
 #include "future_gaze/render/texture.hpp"
-#include "future_gaze/scene/scene_node.hpp"
+#include "future_gaze/scene/scene_graph.hpp"
 
 namespace future_gaze::builders
 {

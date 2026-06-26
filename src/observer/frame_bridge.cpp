@@ -1,9 +1,10 @@
+#include <algorithm>
 #include <cstdint>
 #include <cstdlib>
-#include <cstring>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <iterator>
 #include <limits>
 #include <string>
 #include <vector>
@@ -79,8 +80,8 @@ int main(int argc, char** argv) {
     if (!ReadExact(input, reinterpret_cast<char*>(&header), sizeof(header))) {
         Die("missing or truncated stream header");
     }
-    if (std::memcmp(header.magic, kFrameStreamMagic, sizeof(header.magic)) !=
-        0) {
+    if (!std::equal(std::begin(header.magic), std::end(header.magic),
+                    std::begin(kFrameStreamMagic))) {
         Die("bad stream magic");
     }
     if (header.version != kFrameStreamVersion) {
@@ -138,7 +139,7 @@ int main(int argc, char** argv) {
             const auto src =
                 static_cast<std::size_t>(header.height - 1U - y) * row_bytes;
             const auto dst = static_cast<std::size_t>(y) * row_bytes;
-            std::memcpy(flipped.data() + dst, frame.data() + src, row_bytes);
+            std::copy_n(frame.data() + src, row_bytes, flipped.data() + dst);
         }
 
         std::cout.write(reinterpret_cast<const char*>(flipped.data()),

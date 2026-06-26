@@ -1,10 +1,62 @@
 #include "future_gaze/scene/scene_graph.hpp"
 
-#include <functional>
 #include <utility>
 
 namespace future_gaze
 {
+
+// ── SceneNode
+// ─────────────────────────────────────────────────────────────────
+
+SceneNode::SceneNode(SceneGraph& graph, TfHandle handle)
+    : graph_(&graph), handle_(handle) {}
+
+SceneNode& SceneNode::NewChild(std::string name) {
+    return graph_->NewChild(*this, std::move(name));
+}
+
+const std::string& SceneNode::name() const {
+    return graph_->tf().Name(handle_);
+}
+
+Transform SceneNode::Local() const {
+    return graph_->tf().Local(handle_);
+}
+
+void SceneNode::SetLocal(Transform local) {
+    graph_->tf().SetLocal(handle_, local);
+}
+
+void SceneNode::Draw() const {
+    const ScopedMatrixPush push;
+    glMultMatrixf(graph_->tf().LocalMatrix(handle_).Data());
+
+    if (renderable_.has_value()) {
+        renderable_->Draw();
+    }
+
+    for (const auto& child : children_) {
+        child->Draw();
+    }
+}
+
+void SceneNode::DrawShadow(float min_world_y, float max_world_y) const {
+    const float world_y = graph_->tf().WorldPosition(handle_).y;
+    const ScopedMatrixPush push;
+    glMultMatrixf(graph_->tf().LocalMatrix(handle_).Data());
+
+    if (renderable_.has_value() && world_y >= min_world_y &&
+        world_y <= max_world_y) {
+        renderable_->DrawShadow();
+    }
+
+    for (const auto& child : children_) {
+        child->DrawShadow(min_world_y, max_world_y);
+    }
+}
+
+// ── SceneGraph
+// ────────────────────────────────────────────────────────────────
 
 SceneGraph::SceneGraph(std::string root_name) {
     const TfHandle root = tf_.CreateRoot(std::move(root_name));
@@ -40,23 +92,24 @@ SceneNode& SceneGraph::NewChild(SceneNode& parent, std::string name) {
     return *parent.children_.back();
 }
 
+const SceneNode* SceneGraph::FindInTree(const SceneNode& node,
+                                        TfHandle handle) noexcept {
+    if (node.handle() == handle) {
+        return &node;
+    }
+    for (const auto& child : node.children_) {
+        if (const SceneNode* hit = FindInTree(*child, handle)) {
+            return hit;
+        }
+    }
+    return nullptr;
+}
+
 const SceneNode* SceneGraph::NodeFor(TfHandle handle) const {
     if (!tf_.Contains(handle)) {
         return nullptr;
     }
-    const std::function<const SceneNode*(const SceneNode&)> find =
-        [&](const SceneNode& node) -> const SceneNode* {
-        if (node.handle() == handle) {
-            return &node;
-        }
-        for (const auto& child : node.children_) {
-            if (const SceneNode* hit = find(*child)) {
-                return hit;
-            }
-        }
-        return nullptr;
-    };
-    return find(*root_);
+    return FindInTree(*root_, handle);
 }
 
 }  // namespace future_gaze

@@ -4,7 +4,6 @@
 #include "future_gaze/render/material.hpp"
 #include "future_gaze/render/mesh.hpp"
 #include "future_gaze/scene/builders.hpp"
-#include "future_gaze/scene/node_names.hpp"
 
 namespace future_gaze::builders
 {

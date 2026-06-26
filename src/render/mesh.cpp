@@ -11,8 +11,6 @@
 #include <span>
 #include <utility>
 
-#include "future_gaze/render/scoped_gl.hpp"
-
 namespace future_gaze
 {
 
