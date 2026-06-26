@@ -10,6 +10,8 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+option(FUTURE_GAZE_OBSERVER_TOOLS "Build deterministic observer-only recording tools" OFF)
+
 find_package(OpenGL REQUIRED)
 find_package(GLUT REQUIRED)
 
@@ -75,5 +77,32 @@ target_compile_options(future_gaze_tests
         -Wpedantic
 )
 
-
 add_test(NAME future_gaze_tests COMMAND future_gaze_tests)
+
+if(FUTURE_GAZE_OBSERVER_TOOLS)
+    target_sources(future_gaze
+        PRIVATE
+            src/observer/frame_recorder.cpp
+    )
+
+    target_compile_definitions(future_gaze
+        PRIVATE
+            FUTURE_GAZE_OBSERVER_TOOLS=1
+    )
+
+    add_executable(future_gaze_frame_bridge
+        src/observer/frame_bridge.cpp
+    )
+
+    target_include_directories(future_gaze_frame_bridge
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    target_compile_options(future_gaze_frame_bridge
+        PRIVATE
+            -Wall
+            -Wextra
+            -Wpedantic
+    )
+endif()

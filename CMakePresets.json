@@ -28,6 +28,19 @@
         "CMAKE_BUILD_TYPE": "Debug",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
       }
+    },
+    {
+      "name": "observer-debug",
+      "displayName": "Observer Debug (Ninja)",
+      "description": "Debug build with deterministic observer-only recording tools enabled.",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/observer-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_CXX_COMPILER": "clang++",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "FUTURE_GAZE_OBSERVER_TOOLS": "ON"
+      }
     }
   ],
   "buildPresets": [
@@ -38,6 +51,10 @@
     {
       "name": "default-debug",
       "configurePreset": "default-debug"
+    },
+    {
+      "name": "observer-debug",
+      "configurePreset": "observer-debug"
     }
   ]
 }
