@@ -7,11 +7,11 @@
   },
   "configurePresets": [
     {
-      "name": "clang-debug",
-      "displayName": "Clang Debug (Ninja)",
-      "description": "Primary development preset using clang and ninja.",
+      "name": "dev",
+      "displayName": "Development",
+      "description": "Default local development build using clang and ninja.",
       "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build/clang-debug",
+      "binaryDir": "${sourceDir}/build/${presetName}",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "CMAKE_CXX_COMPILER": "clang++",
@@ -19,42 +19,55 @@
       }
     },
     {
-      "name": "default-debug",
-      "displayName": "Default Compiler Debug (Ninja)",
-      "description": "Fallback ninja preset using the system default compiler.",
+      "name": "release",
+      "displayName": "Release",
+      "description": "Optimized clang+ninja build for final delivery.",
       "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build/default-debug",
+      "binaryDir": "${sourceDir}/build/${presetName}",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_CXX_COMPILER": "clang++",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
       }
     },
     {
-      "name": "observer-debug",
-      "displayName": "Observer Debug (Ninja)",
-      "description": "Debug build with deterministic observer-only recording tools enabled.",
-      "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build/observer-debug",
+      "name": "observer",
+      "displayName": "Observer Tools",
+      "description": "Development build with deterministic observer-only recording tools enabled.",
+      "inherits": "dev",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_CXX_COMPILER": "clang++",
-        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
         "FUTURE_GAZE_OBSERVER_TOOLS": "ON"
       }
     }
   ],
   "buildPresets": [
     {
-      "name": "clang-debug",
-      "configurePreset": "clang-debug"
+      "name": "dev",
+      "configurePreset": "dev"
     },
     {
-      "name": "default-debug",
-      "configurePreset": "default-debug"
+      "name": "release",
+      "configurePreset": "release"
     },
     {
-      "name": "observer-debug",
-      "configurePreset": "observer-debug"
+      "name": "observer",
+      "configurePreset": "observer"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "dev",
+      "configurePreset": "dev",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "observer",
+      "configurePreset": "observer",
+      "output": {
+        "outputOnFailure": true
+      }
     }
   ]
 }
