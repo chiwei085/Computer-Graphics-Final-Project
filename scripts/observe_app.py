@@ -9,24 +9,33 @@ Exposes enough information for AI-driven testing and observation:
   launch      - start app in background, save PID
   kill        - terminate running app
   orbit       - left-mouse drag to rotate camera (dx, dy in pixels)
+  gaze        - toggle G mode, left-drag to rotate the Prediction Core
+  gaze-future / gaze-longing / gaze-overlap
+              - reset the Prediction Core aim, drag to a fixed story check pose,
+                and save a screenshot
   zoom        - mouse-wheel scroll to zoom camera
   key         - send keyboard key to the app window
   click       - click at window-relative coordinates (fractions 0.0-1.0)
-  record      - capture the window to an mp4 via xwd frames + ffmpeg
-  motion      - record a clip and report motion / smoothness / liveliness
+  scripted-gaze
+              - launch with deterministic app-side gaze automation + stderr logs
+  stderr-log  - print recent app stderr observation logs
+  record      - deterministic observer-build framebuffer recording to MP4
+  motion      - analyze deterministic MP4 + manifest motion metrics
 
 Usage:
   uv run python observe_app.py info
   uv run python observe_app.py launch --build
   uv run python observe_app.py screenshot --out /tmp/frame.png
   uv run python observe_app.py orbit 200 -50
+  uv run python observe_app.py gaze 180 40
   uv run python observe_app.py zoom 3
-  uv run python observe_app.py key escape
-  uv run python observe_app.py motion --duration 5
+  uv run python observe_app.py scripted-gaze future --build
+  uv run python observe_app.py stderr-log --tail 160
 """
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import signal
@@ -42,9 +51,20 @@ import typer
 PROJECT_ROOT = Path(__file__).parent.parent
 BUILD_DIR = PROJECT_ROOT / "build" / "clang-debug"
 BINARY = BUILD_DIR / "future_gaze"
+OBSERVER_BUILD_DIR = PROJECT_ROOT / "build" / "observer-debug"
+OBSERVER_BINARY = OBSERVER_BUILD_DIR / "future_gaze"
+FRAME_BRIDGE = OBSERVER_BUILD_DIR / "future_gaze_frame_bridge"
 WINDOW_TITLE = "Future's Gaze"
 PID_FILE = Path("/tmp/future_gaze.pid")
+LOG_FILE = Path("/tmp/future_gaze.stderr.log")
 SCREENSHOT_DIR = PROJECT_ROOT / "docs" / "screenshots"
+STORY_POSES: dict[str, tuple[int, int] | None] = {
+    "future": (0, 270),
+    "longing": (0, 215),
+    "overlap": (115, 235),
+    "blindspot": (420, 0),
+    "none": None,
+}
 
 cli = typer.Typer(
     help="Interact with Future's Gaze OpenGL window.",
@@ -98,6 +118,37 @@ def _ease_in_out_quad(t: float) -> float:
     return -1.0 + (4.0 - 2.0 * t) * t
 
 
+def _timestamp_tag() -> str:
+    """Return a collision-resistant timestamp for generated media filenames."""
+    return time.strftime("%Y%m%d_%H%M%S") + f"_{time.time_ns() % 1_000_000_000:09d}"
+
+
+def _build_dir_for_preset(preset: str) -> Path:
+    return PROJECT_ROOT / "build" / preset
+
+
+def _binary_for_preset(preset: str) -> Path:
+    return _build_dir_for_preset(preset) / "future_gaze"
+
+
+def _print_dynamic_observation_warning(command: str) -> None:
+    typer.echo(
+        f"✗ `{command}` is disabled by default: xwd burst capture can starve "
+        "the GLUT loop and freeze app time under WSLg.",
+        err=True,
+    )
+    typer.echo(
+        "  Use deterministic app-side automation instead, e.g. "
+        "`cd scripts && uv run python observe_app.py scripted-gaze future --build`.",
+        err=True,
+    )
+    typer.echo(
+        f"  Then inspect ground truth with `uv run python observe_app.py "
+        f"stderr-log --tail 160` ({LOG_FILE}).",
+        err=True,
+    )
+
+
 # ── Window discovery ───────────────────────────────────────────────────────────
 
 
@@ -134,7 +185,7 @@ def _find_window_xwininfo() -> tuple[int, int, int, int] | None:
     """Return (x, y, w, h) by scanning the root window tree via xwininfo.
 
     Uses partial title match so it works even if the app appends a suffix like
-    "- P3" to WINDOW_TITLE.  First finds the window ID from the tree, then
+    "- preview" to WINDOW_TITLE.  First finds the window ID from the tree, then
     queries its exact geometry.
     """
     env = {**os.environ, "DISPLAY": os.environ.get("DISPLAY", ":0")}
@@ -273,30 +324,46 @@ def _screenshot_xwd(out_path: Path):
 
 
 @cli.command()
-def build() -> None:
-    """Configure and build the project (cmake --preset clang-debug + ninja)."""
+def build(
+    preset: str = typer.Option(
+        "clang-debug",
+        "--preset",
+        help="CMake preset to configure/build.",
+    ),
+) -> None:
+    """Configure and build the project with a CMake preset."""
     typer.echo("→ cmake configure...")
     subprocess.run(
-        ["cmake", "--preset", "clang-debug"],
+        ["cmake", "--preset", preset],
         cwd=PROJECT_ROOT,
         check=True,
     )
-    typer.echo("→ ninja build...")
+    typer.echo("→ cmake build...")
     subprocess.run(
-        ["ninja", "-C", str(BUILD_DIR)],
+        ["cmake", "--build", "--preset", preset],
+        cwd=PROJECT_ROOT,
         check=True,
     )
-    typer.echo(f"✓ Build complete: {BINARY}")
+    typer.echo(f"✓ Build complete: {_binary_for_preset(preset)}")
 
 
 @cli.command()
 def launch(
     do_build: bool = typer.Option(False, "--build", "-b", help="Build before launching."),
     wait: float = typer.Option(2.0, "--wait", help="Seconds to wait for window after launch."),
+    automation: Annotated[
+        Path | None,
+        typer.Option("--automation", help="Timed app-side command script to run in GLUT idle."),
+    ] = None,
+    log_every: float = typer.Option(
+        0.0,
+        "--log-every",
+        help="Emit deterministic observation state every N seconds to stderr log.",
+    ),
 ) -> None:
     """Launch the app in the background. PID saved to /tmp/future_gaze.pid."""
     if do_build:
-        build()
+        build(preset="clang-debug")
 
     if not BINARY.exists():
         typer.echo(f"✗ Binary not found: {BINARY}. Run `build` first.", err=True)
@@ -304,14 +371,22 @@ def launch(
 
     _ensure_display()
     env = os.environ.copy()
+    if automation is not None:
+        env["FUTURE_GAZE_AUTOMATION"] = str(automation)
+    if log_every > 0.0:
+        env["FUTURE_GAZE_LOG_EVERY"] = f"{log_every:.3f}"
 
+    log = LOG_FILE.open("wb")
     proc = subprocess.Popen(
         [str(BINARY)],
         cwd=PROJECT_ROOT,
         env=env,
+        stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
-        stderr=subprocess.PIPE,
+        stderr=log,
+        start_new_session=True,
     )
+    log.close()
     PID_FILE.write_text(str(proc.pid))
     typer.echo(f"✓ Launched PID={proc.pid}. Waiting {wait}s for window...")
     time.sleep(wait)
@@ -322,6 +397,7 @@ def launch(
         typer.echo(f"✓ Window found: {w}×{h} at screen ({x},{y})")
     else:
         typer.echo("⚠ Window not found (may still be starting up)")
+    typer.echo(f"stderr log: {LOG_FILE}")
 
 
 @cli.command()
@@ -362,7 +438,7 @@ def screenshot(
       unexpected bright region = lighting/geometry artifact
     """
     SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
-    ts = int(time.time())
+    ts = _timestamp_tag()
     out_path = out or (SCREENSHOT_DIR / f"screenshot_{ts}.png")
 
     _ensure_display()
@@ -436,6 +512,53 @@ def _analyze_regions(img) -> None:  # img: PIL.Image.Image
     typer.echo("")
 
 
+def _drag_gaze(dx: int, dy: int, duration: float) -> None:
+    typer.echo(
+        "⚠ pyautogui input is focus-dependent under WSLg; for deterministic "
+        "checks use `scripted-gaze`.",
+        err=True,
+    )
+    geo = _require_window()
+    wx, wy, ww, wh = geo
+    start_x = wx + ww // 2
+    start_y = wy + wh // 2
+
+    pag = _pag()
+    pag.click(start_x, start_y)
+    time.sleep(0.05)
+    pag.press("g")
+    time.sleep(0.05)
+    pag.moveTo(start_x, start_y)
+    pag.mouseDown(button="left")
+    time.sleep(0.05)
+    pag.moveTo(
+        start_x + dx,
+        start_y + dy,
+        duration=duration,
+        tween=_ease_in_out_quad,
+    )
+    time.sleep(0.05)
+    pag.mouseUp(button="left")
+    time.sleep(0.05)
+    pag.press("g")
+    typer.echo(f"✓ Gaze drag ({dx:+d}, {dy:+d})  from ({start_x},{start_y})")
+
+
+def _story_pose(name: str, dx: int, dy: int, duration: float) -> None:
+    typer.echo(f"→ story {name}: reset gaze, drag, then screenshot")
+    geo = _require_window()
+    wx, wy, ww, wh = geo
+    pag = _pag()
+    pag.click(wx + ww // 2, wy + wh // 2)
+    time.sleep(0.05)
+    pag.press("h")
+    time.sleep(0.10)
+    _drag_gaze(dx, dy, duration)
+    time.sleep(0.45)
+    out = SCREENSHOT_DIR / f"story_{name}_{_timestamp_tag()}.png"
+    screenshot(out=out, no_analysis=False)
+
+
 @cli.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
 def orbit(
     args: Annotated[list[str], typer.Argument(help="dx dy — pixel deltas (may be negative).")],
@@ -458,6 +581,10 @@ def orbit(
         typer.echo("Error: dx and dy must be integers", err=True)
         raise typer.Exit(1)
 
+    typer.echo(
+        "⚠ pyautogui drag is focus-dependent under WSLg; verify with screenshot/logs.",
+        err=True,
+    )
     geo = _require_window()
     wx, wy, ww, wh = geo
     start_x = wx + ww // 2
@@ -477,6 +604,56 @@ def orbit(
     time.sleep(0.05)
     pag.mouseUp(button="left")
     typer.echo(f"✓ Orbit drag ({dx:+d}, {dy:+d})  from ({start_x},{start_y})")
+
+
+@cli.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
+def gaze(
+    args: Annotated[list[str], typer.Argument(help="dx dy — pixel deltas (may be negative).")],
+    duration: float = typer.Option(0.3, "--duration", help="Drag animation duration (seconds)."),
+) -> None:
+    """
+    Toggle Gaze mode, left-drag the Prediction Core, then return to camera mode.
+
+    This assumes the app starts in camera mode. It is intentionally symmetric
+    (press G before and after) so repeated visual checks leave normal camera
+    orbit controls available.
+
+    Example: gaze 180 40
+    """
+    if len(args) < 2:
+        typer.echo("Error: provide dx and dy  e.g. gaze 180 40", err=True)
+        raise typer.Exit(1)
+    try:
+        dx, dy = int(args[0]), int(args[1])
+    except ValueError:
+        typer.echo("Error: dx and dy must be integers", err=True)
+        raise typer.Exit(1)
+
+    _drag_gaze(dx, dy, duration)
+
+
+@cli.command()
+def gaze_future(
+    duration: float = typer.Option(0.34, "--duration", help="Drag animation duration."),
+) -> None:
+    """Fixed check: look at the tabletop glass accident chain and capture."""
+    _story_pose("future", 0, 270, duration)
+
+
+@cli.command()
+def gaze_longing(
+    duration: float = typer.Option(0.34, "--duration", help="Drag animation duration."),
+) -> None:
+    """Fixed check: look toward the rear empty chairs and capture."""
+    _story_pose("longing", 0, 215, duration)
+
+
+@cli.command()
+def gaze_overlap(
+    duration: float = typer.Option(0.34, "--duration", help="Drag animation duration."),
+) -> None:
+    """Fixed check: hold the empty-chair overlap composition and capture."""
+    _story_pose("overlap", 115, 235, duration)
 
 
 @cli.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
@@ -523,6 +700,11 @@ def key(
     ),
 ) -> None:
     """Send a keyboard key to the app window (focuses window first via click)."""
+    typer.echo(
+        "⚠ pyautogui key delivery is focus-dependent under WSLg; use app-side "
+        "automation for timing-sensitive checks.",
+        err=True,
+    )
     geo = _require_window()
     wx, wy, ww, wh = geo
     cx, cy = wx + ww // 2, wy + wh // 2
@@ -531,6 +713,102 @@ def key(
     time.sleep(0.05)
     pag.press(k)
     typer.echo(f"✓ Key pressed: {k!r}")
+
+
+@cli.command("stderr-log")
+def stderr_log(
+    tail: int = typer.Option(120, "--tail", "-n", help="Number of recent log lines to print."),
+) -> None:
+    """Print recent stderr from the app launched by this script."""
+    if not LOG_FILE.exists():
+        typer.echo(f"✗ Log not found: {LOG_FILE}. Launch the app with this script first.", err=True)
+        raise typer.Exit(1)
+    for line in LOG_FILE.read_text(errors="replace").splitlines()[-tail:]:
+        typer.echo(line)
+
+
+def _terminate_existing_if_any() -> None:
+    if not PID_FILE.exists():
+        return
+    try:
+        pid = int(PID_FILE.read_text().strip())
+    except ValueError:
+        PID_FILE.unlink(missing_ok=True)
+        return
+    try:
+        os.kill(pid, signal.SIGTERM)
+        time.sleep(0.25)
+    except ProcessLookupError:
+        pass
+    PID_FILE.unlink(missing_ok=True)
+
+
+def _write_automation_script(pose: str) -> Path:
+    if pose not in STORY_POSES:
+        typer.echo(f"✗ Unknown pose {pose!r}. Choose: {', '.join(STORY_POSES)}", err=True)
+        raise typer.Exit(1)
+
+    script_path = Path("/tmp") / f"future_gaze_automation_{pose}_{_timestamp_tag()}.txt"
+    commands = [
+        "# seconds command args...",
+        "0.05 log start",
+    ]
+    pose_delta = STORY_POSES[pose]
+    if pose_delta is not None:
+        dx, dy = pose_delta
+        commands.extend(
+            [
+                "0.15 reset_gaze",
+                "0.20 gaze_mode on",
+                f"0.30 gaze_drag {dx} {dy}",
+                "0.45 log aimed",
+                "0.50 gaze_mode off",
+                "0.65 log restage_start",
+                "1.20 log restage_mid",
+                "2.35 log settled",
+            ]
+        )
+    else:
+        commands.extend(
+            [
+                "0.50 log neutral",
+                "1.20 log neutral_mid",
+                "2.35 log neutral_settled",
+            ]
+        )
+    commands.append("")
+    script_path.write_text("\n".join(commands))
+    return script_path
+
+
+@cli.command("scripted-gaze")
+def scripted_gaze(
+    pose: str = typer.Argument("future", help="future, longing, overlap, or blindspot."),
+    do_build: bool = typer.Option(False, "--build", "-b", help="Build before launching."),
+    wait: float = typer.Option(2.0, "--wait", help="Seconds to wait for window after launch."),
+    log_every: float = typer.Option(
+        0.10,
+        "--log-every",
+        help="Per-frame-ish app-side state log interval in seconds.",
+    ),
+    kill_existing: bool = typer.Option(
+        True,
+        "--kill-existing/--keep-existing",
+        help="Terminate a previous script-launched app before starting.",
+    ),
+) -> None:
+    """Launch with deterministic app-side gaze automation and stderr state logs."""
+    if pose not in STORY_POSES or STORY_POSES[pose] is None:
+        allowed = [name for name, delta in STORY_POSES.items() if delta is not None]
+        typer.echo(f"✗ Unknown pose {pose!r}. Choose: {', '.join(allowed)}", err=True)
+        raise typer.Exit(1)
+
+    if kill_existing:
+        _terminate_existing_if_any()
+
+    script_path = _write_automation_script(pose)
+    typer.echo(f"✓ Automation script: {script_path}")
+    launch(do_build=do_build, wait=wait, automation=script_path, log_every=log_every)
 
 
 @cli.command()
@@ -576,6 +854,7 @@ def info() -> None:
 
     typer.echo(f"Binary   : {BINARY}  [{'exists' if BINARY.exists() else 'MISSING'}]")
     typer.echo(f"DISPLAY  : {os.environ.get('DISPLAY', '(not set)')}")
+    typer.echo(f"Log file : {LOG_FILE}  [{'exists' if LOG_FILE.exists() else 'missing'}]")
 
     # ── Window ──
     _ensure_display()
@@ -590,6 +869,9 @@ def info() -> None:
     typer.echo("\n── Controls ──────────────────────────────────────────────")
     typer.echo("  ESC             → quit")
     typer.echo("  Left-drag       → orbit camera (yaw + pitch)")
+    typer.echo("  G               → toggle Prediction Core gaze-drag mode")
+    typer.echo("  H               → reset Prediction Core gaze aim")
+    typer.echo("  V               → toggle gaze cone / blind-axis debug overlay")
     typer.echo("  Scroll up/down  → zoom in/out (step ≈0.35, distance clamp 2–18)")
     typer.echo("  Camera pitch    : clamped ±1.25 rad (~±72°)")
 
@@ -634,6 +916,10 @@ def _grab_frame(win_id: str, w: int, h: int, env: dict, color: bool):
 def _capture_burst(duration: float, color: bool = False):
     """Capture window frames as fast as xwd allows for `duration` seconds.
 
+    WARNING: intrusive under WSLg. Repeated xwd captures can starve the GLUT
+    loop and make app time appear frozen. Keep this behind explicit
+    --force-xwd gates; do not use it as animation timing ground truth.
+
     Returns (frames, timestamps, w, h). Real per-frame timestamps are returned
     so the analysis can normalize by actual dt (xwd cadence is ~10-15 fps and
     slightly uneven), keeping the smoothness metric honest.
@@ -671,71 +957,88 @@ def _grade(score: float) -> str:
     return "poor — stiff or broken"
 
 
-@cli.command()
-def record(
-    out: Annotated[Path | None, typer.Option("--out", "-o", help="Output mp4 path.")] = None,
-    duration: float = typer.Option(5.0, "--duration", "-d", help="Clip length (seconds)."),
-) -> None:
-    """
-    Record the app window to an mp4 by capturing xwd frames (no input sent).
+def _ffmpeg_exe() -> str:
+    try:
+        import imageio_ffmpeg
+    except ImportError:
+        typer.echo(
+            "✗ imageio-ffmpeg is not installed. Run `cd scripts && uv add imageio-ffmpeg`.",
+            err=True,
+        )
+        raise typer.Exit(1)
+    return imageio_ffmpeg.get_ffmpeg_exe()
 
-    Plays back at the real capture rate so the clip's timing matches what was
-    seen. (ffmpeg x11grab cannot see the WSLg GL surface, so xwd is used.)
-    """
+
+def _load_manifest(path: Path) -> list[dict]:
+    records: list[dict] = []
+    for line in path.read_text().splitlines():
+        if line.strip():
+            records.append(json.loads(line))
+    return records
+
+
+def _read_video_grays(path: Path):
+    import cv2
     import numpy as np
 
-    SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
-    out_path = out or (SCREENSHOT_DIR / f"clip_{int(time.time())}.mp4")
-    typer.echo(f"→ capturing {duration:.1f}s via xwd ...")
-    frames, ts, w, h = _capture_burst(duration, color=True)
-    if len(frames) < 2:
-        typer.echo("✗ Too few frames captured.", err=True)
+    cap = cv2.VideoCapture(str(path))
+    if not cap.isOpened():
+        typer.echo(f"✗ Cannot open video: {path}", err=True)
         raise typer.Exit(1)
-    eff_fps = len(frames) / (ts[-1] - ts[0]) if ts[-1] > ts[0] else 12.0
-    enc = subprocess.run(
-        ["ffmpeg", "-y", "-v", "error", "-f", "rawvideo", "-pix_fmt", "bgr24",
-         "-s", f"{w}x{h}", "-r", f"{eff_fps:.3f}", "-i", "pipe:0",
-         "-pix_fmt", "yuv420p", str(out_path)],
-        input=np.concatenate([f.reshape(-1) for f in frames]).tobytes(),
-        capture_output=True,
-    )
-    if enc.returncode != 0:
-        typer.echo(enc.stderr[-400:].decode(errors="replace"), err=True)
-        raise typer.Exit(1)
-    typer.echo(f"✓ Saved: {out_path}  [{len(frames)} frames @ {eff_fps:.1f}fps]")
+
+    frames = []
+    width = 0
+    height = 0
+    while True:
+        ok, frame = cap.read()
+        if not ok:
+            break
+        height, width = frame.shape[:2]
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY).astype(np.float32)
+        frames.append(gray)
+    cap.release()
+    return frames, width, height
 
 
-@cli.command()
-def motion(
-    duration: float = typer.Option(6.0, "--duration", "-d", help="Capture length (seconds)."),
-    flow: bool = typer.Option(True, "--flow/--no-flow", help="Run optical-flow velocity analysis."),
-) -> None:
-    """
-    Capture the self-running animation and report motion / smoothness metrics.
-
-    Designed to judge whether the scene moves *and* moves smoothly ("流暢/高級感")
-    rather than stiffly. Send no input first — the scene animates on its own.
-    Frames are captured via xwd (WSLg-safe) at real timestamps; the motion
-    signal is normalized to per-second rates so uneven capture cadence does not
-    masquerade as jerk.
-
-    Reported metrics:
-      activity        inter-frame pixel change rate (is anything moving?)
-      moving frames   fraction of frames with real motion (vs frozen)
-      jerk            high-frequency variation of the motion rate (lower=smoother)
-      velocity smooth optical-flow speed continuity 0-100 (higher=more fluid)
-      per-region      where motion happens (3x3 grid) - verify each element moves
-      SMOOTHNESS      overall 0-100 score + grade
-    """
+def _analyze_recorded_motion(video_path: Path, manifest_path: Path, flow: bool = True) -> None:
     import numpy as np
 
-    typer.echo(f"→ capturing {duration:.1f}s via xwd (no input sent) ...")
-    grays, ts, w, h = _capture_burst(duration, color=False)
-
-    n = len(grays)
+    records = _load_manifest(manifest_path)
+    grays, w, h = _read_video_grays(video_path)
+    n_manifest = len(records)
+    n_video = len(grays)
+    n = min(n_manifest, n_video)
     if n < 4:
-        typer.echo(f"✗ Only {n} frames captured — cannot analyze.", err=True)
+        typer.echo(
+            f"✗ Only {n} paired video/manifest frames — cannot analyze.",
+            err=True,
+        )
         raise typer.Exit(1)
+
+    if n_video != n_manifest:
+        typer.echo(
+            f"⚠ video/manifest frame count mismatch: video={n_video}, manifest={n_manifest}; "
+            f"analyzing first {n}",
+            err=True,
+        )
+    grays = grays[:n]
+    records = records[:n]
+
+    frame_indices = np.array([int(r["frame_index"]) for r in records], dtype=np.int64)
+    app_times = np.array([float(r["app_time"]) for r in records], dtype=np.float64)
+    manifest_fps = float(records[0].get("fps", 0.0) or 0.0)
+    if manifest_fps <= 0.0 and n > 1:
+        manifest_fps = 1.0 / max(float(np.median(np.diff(app_times))), 1e-6)
+
+    index_steps = np.diff(frame_indices)
+    index_gaps = int(np.sum(np.maximum(index_steps - 1, 0))) if index_steps.size else 0
+    non_monotonic = int(np.sum(index_steps != 1)) if index_steps.size else 0
+    expected_dt = 1.0 / manifest_fps if manifest_fps > 0.0 else 0.0
+    app_dt = np.diff(app_times)
+    dt_error = (
+        float(np.max(np.abs(app_dt - expected_dt))) if app_dt.size and expected_dt > 0.0 else 0.0
+    )
+    app_span = float(app_times[-1] - app_times[0]) if n > 1 else 0.0
 
     cv2 = None
     if flow:
@@ -743,40 +1046,29 @@ def motion(
             import cv2
         except ImportError:
             typer.echo(
-                "⚠ opencv not installed; skipping flow. "
-                "(uv add opencv-python-headless)",
+                "⚠ opencv not installed; skipping flow. (uv add opencv-python-headless)",
                 err=True,
             )
             flow = False
 
-    eff_fps = n / (ts[-1] - ts[0]) if ts[-1] > ts[0] else 0.0
-    dt = np.diff(ts)  # real seconds between consecutive frames
-    dt = np.clip(dt, 1e-3, None)
+    dt = np.clip(app_dt, 1e-6, None)
+    if flow and cv2 is not None:
+        smalls = [cv2.resize(g.astype(np.uint8), (320, 180)) for g in grays]
 
-    # Downscaled copies for optical flow (cheaper, robust to texture noise).
-    if flow:
-        smalls = [cv2.resize(g, (320, 180)) for g in grays]
-
-    # ── Inter-frame motion signal, normalized to per-second rate ──────────────
     raw = np.array([np.mean(np.abs(grays[i] - grays[i - 1])) for i in range(1, n)])
-    rate = raw / dt  # pixel-Δ per second — independent of capture cadence
+    rate = raw / dt
     activity = float(raw.mean())
     activity_max = float(raw.max())
     median = float(np.median(raw)) if raw.size else 0.0
     frozen_frac = float(np.mean(raw < 0.02))
     moving_frac = float(np.mean(raw > 0.05))
-
-    # Jerk: abruptness of the (cadence-normalized) motion rate, normalized by its
-    # own mean. Smooth animation → gradual change → low jerk.
     jerk = float(np.std(np.diff(rate)) / (rate.mean() + 1e-6))
 
-    # Stutter spikes: low-motion frames sandwiched between higher-motion ones.
     spikes = 0
     for i in range(1, len(raw) - 1):
         if raw[i] < 0.4 * median and raw[i - 1] > median and raw[i + 1] > median:
             spikes += 1
 
-    # ── Per-region localization (3x3) ─────────────────────────────────────────
     region_names = [
         ["top-left", "top-center", "top-right"],
         ["mid-left", "center", "mid-right"],
@@ -788,25 +1080,17 @@ def motion(
         for rx in range(3):
             y0, y1 = ry * h // 3, (ry + 1) * h // 3
             x0, x1 = rx * w // 3, (rx + 1) * w // 3
-            vals = np.array([
-                np.mean(np.abs(grays[i][y0:y1, x0:x1] - grays[i - 1][y0:y1, x0:x1]))
-                for i in range(1, n)
-            ])
-            region_motion[region_names[ry][rx]] = float(vals.mean())
-            # Per-region temporal jerk — measures whether *this element's* motion
-            # is smooth, free of the cross-mover confound that wrecks a global
-            # centroid. Normalize the rate by dt so cadence jitter is removed.
-            r_rate = vals / dt
-            region_jerk[region_names[ry][rx]] = float(
-                np.std(np.diff(r_rate)) / (r_rate.mean() + 1e-6)
+            vals = np.array(
+                [
+                    np.mean(np.abs(grays[i][y0:y1, x0:x1] - grays[i - 1][y0:y1, x0:x1]))
+                    for i in range(1, n)
+                ]
             )
+            name = region_names[ry][rx]
+            region_motion[name] = float(vals.mean())
+            r_rate = vals / dt
+            region_jerk[name] = float(np.std(np.diff(r_rate)) / (r_rate.mean() + 1e-6))
 
-    # ── Centroid-trajectory smoothness ────────────────────────────────────────
-    # Track where motion concentrates each frame (the motion centroid) and judge
-    # how smoothly that point travels. A fluid orbit/turn traces a path whose
-    # acceleration stays small relative to its velocity; stiff or snapping motion
-    # spikes the acceleration. This is robust to sparse, small movers (unlike a
-    # global optical-flow average) and needs no extra dependency.
     ys, xs = np.indices((h, w))
     xs = xs.astype(np.float32)
     ys = ys.astype(np.float32)
@@ -826,78 +1110,58 @@ def motion(
     if len(vel) > 1 and speed.mean() > 1e-3:
         acc = np.diff(vel, axis=0) / dt[2:, None]
         norm_jerk = float(np.linalg.norm(acc, axis=1).mean() / (speed.mean() + 1e-6))
-        # ~ <8 → fluid, >40 → snappy. Map to 0-100.
         path_smooth = float(max(0.0, 100.0 * (1.0 - min(norm_jerk / 35.0, 1.0))))
     else:
-        norm_jerk = 0.0
         path_smooth = 0.0
 
-    # ── Optical-flow velocity continuity (secondary, informational) ───────────
     vel_smooth = None
     flow_speed = None
-    if flow:
+    if flow and cv2 is not None:
         speeds = []
         prev = smalls[0]
         for i in range(1, len(smalls)):
-            f = cv2.calcOpticalFlowFarneback(
-                prev, smalls[i], None, 0.5, 3, 21, 3, 5, 1.2, 0
-            )
+            f = cv2.calcOpticalFlowFarneback(prev, smalls[i], None, 0.5, 3, 21, 3, 5, 1.2, 0)
             mag = np.sqrt(f[..., 0] ** 2 + f[..., 1] ** 2)
-            # Average speed of the pixels that actually move (ignore still bg).
             moving_px = mag[mag > 0.25]
             speeds.append(float(moving_px.mean()) if moving_px.size else 0.0)
             prev = smalls[i]
         speeds = np.array(speeds)
         flow_speed = float(speeds.mean())
         if speeds.mean() > 1e-4:
-            # Continuity = 1 - normalized step-to-step change of the speed curve.
             vc = np.std(np.diff(speeds)) / (speeds.mean() + 1e-6)
             vel_smooth = float(max(0.0, 100.0 * (1.0 - min(vc, 1.0))))
         else:
             vel_smooth = 0.0
 
-    # ── Overall smoothness score ──────────────────────────────────────────────
-    # Penalize jerk and stutter spikes; require that something is actually
-    # moving (a frozen scene cannot be "smooth").
-    # Average the per-region temporal smoothness over regions that actually move
-    # (each animated element judged on its own), plus the global rate-jerk. The
-    # centroid-path and optical-flow numbers are shown for context but excluded
-    # from the score because multiple independent movers confound them.
-    # Only score regions with substantive motion. Below ~0.10 the per-region
-    # rate is dominated by sub-pixel aliasing of small bright/additive elements,
-    # whose normalized jerk is noise rather than real stutter.
     active = [name for name, m in region_motion.items() if m > 0.10]
-    region_scores = [
-        max(0.0, 100.0 * (1.0 - min(region_jerk[name] / 0.6, 1.0))) for name in active
-    ]
+    region_scores = [max(0.0, 100.0 * (1.0 - min(region_jerk[name] / 0.6, 1.0))) for name in active]
     region_smooth = float(np.mean(region_scores)) if region_scores else 0.0
     jerk_score = max(0.0, 100.0 * (1.0 - min(jerk / 0.6, 1.0)))
     spike_penalty = min(40.0, spikes * 6.0)
     smoothness = max(0.0, 0.5 * jerk_score + 0.5 * region_smooth - spike_penalty)
     if activity < 0.01:
-        smoothness = 0.0  # nothing moved
+        smoothness = 0.0
 
-    # ── Report ────────────────────────────────────────────────────────────────
-    typer.echo("\n══ Motion / Smoothness Analysis ══════════════════════════")
-    typer.echo(f"  frames analyzed : {n}  ({eff_fps:.1f} capture fps, {w}×{h})")
-    typer.echo(f"  activity (mean) : {activity:6.3f}   max {activity_max:6.3f}   (pixel Δ 0–255)")
-    typer.echo(f"  moving frames   : {moving_frac*100:5.1f}%   frozen {frozen_frac*100:5.1f}%")
-    typer.echo(f"  jerk            : {jerk:6.3f}   (lower = smoother; <0.30 is fluid)")
-    typer.echo(f"  stutter spikes  : {spikes}")
+    typer.echo("\n══ Deterministic Motion Analysis ═════════════════════════")
+    typer.echo(f"  video          : {video_path}")
+    typer.echo(f"  manifest       : {manifest_path}")
+    typer.echo(f"  frames         : {n_video} encoded, {n_manifest} manifest, {n} analyzed")
+    typer.echo(f"  fps            : {manifest_fps:.3f} manifest fps")
+    typer.echo(f"  app-time span  : {app_span:.6f}s  ({app_times[0]:.6f} → {app_times[-1]:.6f})")
     typer.echo(
-        f"  region smooth   : {region_smooth:5.1f} / 100   "
-        "(per-element temporal jerk, primary)"
+        f"  frame checks   : gaps={index_gaps}  non-unit steps={non_monotonic}  "
+        f"max dt error={dt_error:.9f}s"
     )
-    typer.echo(
-        f"  path smoothness : {path_smooth:5.1f} / 100   "
-        "(motion-centroid trajectory, ctx only)"
-    )
-    if flow:
-        typer.echo(f"  flow speed      : {flow_speed:6.3f} px/frame")
-        typer.echo(
-            f"  velocity smooth : {vel_smooth:5.1f} / 100   "
-            "(optical-flow continuity, ctx only)"
-        )
+    typer.echo(f"  resolution     : {w}×{h}")
+    typer.echo(f"  activity       : {activity:6.3f}   max {activity_max:6.3f}   (pixel Δ 0–255)")
+    typer.echo(f"  moving frames  : {moving_frac * 100:5.1f}%   frozen {frozen_frac * 100:5.1f}%")
+    typer.echo(f"  jerk           : {jerk:6.3f}   (lower = smoother; <0.30 is fluid)")
+    typer.echo(f"  stutter spikes : {spikes}")
+    typer.echo(f"  region smooth  : {region_smooth:5.1f} / 100")
+    typer.echo(f"  path smooth    : {path_smooth:5.1f} / 100")
+    if flow and flow_speed is not None and vel_smooth is not None:
+        typer.echo(f"  flow speed     : {flow_speed:6.3f} px/frame")
+        typer.echo(f"  velocity smooth: {vel_smooth:5.1f} / 100")
 
     typer.echo("\n  ── per-region motion (rate, █) + temporal jerk (j) ──")
     hot = max(region_motion.values()) or 1.0
@@ -910,10 +1174,298 @@ def motion(
             jr = region_jerk[name] if v > 0.03 else 0.0
             cells.append(f"{v:4.2f}{bar:<6} j{jr:4.2f}")
         typer.echo("    " + " | ".join(cells))
+    typer.echo("")
+    typer.echo(f"  ▶ SMOOTHNESS   : {smoothness:5.1f} / 100   [{_grade(smoothness)}]")
+    typer.echo("")
 
-    typer.echo("")
-    typer.echo(f"  ▶ SMOOTHNESS    : {smoothness:5.1f} / 100   [{_grade(smoothness)}]")
-    typer.echo("")
+
+def _record_deterministic(
+    pose: str,
+    duration: float,
+    fps: float,
+    out: Path | None,
+    manifest: Path | None,
+    do_build: bool,
+) -> tuple[Path, Path]:
+    if pose not in STORY_POSES:
+        typer.echo(f"✗ Unknown pose {pose!r}. Choose: {', '.join(STORY_POSES)}", err=True)
+        raise typer.Exit(1)
+    if duration <= 0.0:
+        typer.echo("✗ --duration must be positive", err=True)
+        raise typer.Exit(1)
+    if fps <= 0.0:
+        typer.echo("✗ --fps must be positive", err=True)
+        raise typer.Exit(1)
+
+    if do_build:
+        build(preset="observer-debug")
+    if not OBSERVER_BINARY.exists() or not FRAME_BRIDGE.exists():
+        typer.echo(
+            "✗ Observer tools are missing. Run with `--build` or build "
+            "`cmake --preset observer-debug && cmake --build --preset observer-debug`.",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
+    tag = _timestamp_tag()
+    out_path = out or (SCREENSHOT_DIR / f"clip_{pose}_{tag}.mp4")
+    manifest_path = manifest or out_path.with_suffix(".jsonl")
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+
+    max_frames = max(1, round(duration * fps))
+    fifo_path = Path("/tmp") / f"future_gaze_record_{tag}.fifo"
+    fifo_path.unlink(missing_ok=True)
+    os.mkfifo(fifo_path)
+    automation_path = _write_automation_script(pose)
+    app_log_path = Path("/tmp") / f"future_gaze_record_{tag}.stderr.log"
+
+    _ensure_display()
+    env = {
+        **os.environ,
+        "DISPLAY": os.environ.get("DISPLAY", ":0"),
+        "FUTURE_GAZE_AUTOMATION": str(automation_path),
+        "FUTURE_GAZE_LOG_EVERY": f"{1.0 / fps:.6f}",
+        "FUTURE_GAZE_RECORD_FIFO": str(fifo_path),
+        "FUTURE_GAZE_RECORD_FPS": f"{fps:.9f}",
+        "FUTURE_GAZE_RECORD_MAX_FRAMES": str(max_frames),
+        "FUTURE_GAZE_RECORD_FIXED_DT": "1",
+    }
+
+    ffmpeg = _ffmpeg_exe()
+    typer.echo(
+        f"→ recording {max_frames} frames ({duration:.3f}s @ {fps:.3f} fps) "
+        f"pose={pose}"
+    )
+    typer.echo(f"→ automation: {automation_path}")
+
+    bridge = None
+    encoder = None
+    app = None
+    app_log = app_log_path.open("wb")
+    try:
+        bridge = subprocess.Popen(
+            [str(FRAME_BRIDGE), "--fifo", str(fifo_path), "--manifest", str(manifest_path)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        encoder = subprocess.Popen(
+            [
+                ffmpeg,
+                "-y",
+                "-v",
+                "error",
+                "-f",
+                "rawvideo",
+                "-pix_fmt",
+                "rgb24",
+                "-s",
+                "1280x720",
+                "-r",
+                f"{fps:.9f}",
+                "-i",
+                "pipe:0",
+                "-pix_fmt",
+                "yuv420p",
+                str(out_path),
+            ],
+            stdin=bridge.stdout,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+        )
+        if bridge.stdout is not None:
+            bridge.stdout.close()
+        app = subprocess.Popen(
+            [str(OBSERVER_BINARY)],
+            cwd=PROJECT_ROOT,
+            env=env,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=app_log,
+            start_new_session=True,
+        )
+
+        timeout = max(30.0, duration * 12.0 + 15.0)
+        app_rc = app.wait(timeout=timeout)
+        bridge_rc = bridge.wait(timeout=15)
+        _, encoder_err = encoder.communicate(timeout=15)
+    except subprocess.TimeoutExpired:
+        for proc in (app, bridge, encoder):
+            if proc is not None and proc.poll() is None:
+                proc.terminate()
+        typer.echo("✗ Deterministic recording timed out.", err=True)
+        raise typer.Exit(1)
+    finally:
+        app_log.close()
+        fifo_path.unlink(missing_ok=True)
+
+    bridge_err = bridge.stderr.read().decode(errors="replace") if bridge and bridge.stderr else ""
+    encoder_rc = encoder.returncode if encoder is not None else 1
+    encoder_err_text = encoder_err.decode(errors="replace") if encoder_err else ""
+    if app_rc != 0:
+        typer.echo(f"✗ App exited with rc={app_rc}. Log: {app_log_path}", err=True)
+        raise typer.Exit(1)
+    if bridge_rc != 0:
+        typer.echo(f"✗ Bridge exited with rc={bridge_rc}: {bridge_err[-800:]}", err=True)
+        raise typer.Exit(1)
+    if encoder_rc != 0:
+        typer.echo(f"✗ ffmpeg exited with rc={encoder_rc}: {encoder_err_text[-800:]}", err=True)
+        raise typer.Exit(1)
+
+    records = _load_manifest(manifest_path)
+    typer.echo(f"✓ Saved: {out_path}")
+    typer.echo(f"✓ Manifest: {manifest_path}  [{len(records)} frames]")
+    typer.echo(f"stderr log: {app_log_path}")
+    if len(records) != max_frames:
+        typer.echo(
+            f"⚠ expected {max_frames} manifest frames, got {len(records)}",
+            err=True,
+        )
+    return out_path, manifest_path
+
+
+@cli.command()
+def record(
+    out: Annotated[Path | None, typer.Option("--out", "-o", help="Output mp4 path.")] = None,
+    duration: float = typer.Option(5.0, "--duration", "-d", help="Clip length (seconds)."),
+    fps: float = typer.Option(30.0, "--fps", help="Deterministic recording FPS."),
+    pose: str = typer.Option(
+        "future",
+        "--pose",
+        help="Automation pose: future, longing, overlap, blindspot, none.",
+    ),
+    manifest: Annotated[
+        Path | None,
+        typer.Option("--manifest", help="Output JSONL frame manifest path."),
+    ] = None,
+    do_build: bool = typer.Option(
+        False,
+        "--build",
+        "-b",
+        help="Build observer-debug before recording.",
+    ),
+    analyze: bool = typer.Option(
+        False,
+        "--analyze",
+        help="Analyze motion metrics from the encoded MP4 + manifest.",
+    ),
+    force_xwd: bool = typer.Option(
+        False,
+        "--force-xwd",
+        help="Run the known-intrusive xwd burst capture anyway.",
+    ),
+) -> None:
+    """
+    Record a deterministic observer-build framebuffer stream to MP4.
+
+    The default path records frames from inside the app render loop, flips them
+    through the bridge helper, encodes with bundled ffmpeg, and writes a JSONL
+    manifest. `--force-xwd` is retained only as an intrusive regression fallback.
+    """
+    import numpy as np
+
+    if not force_xwd:
+        out_path, manifest_path = _record_deterministic(
+            pose=pose,
+            duration=duration,
+            fps=fps,
+            out=out,
+            manifest=manifest,
+            do_build=do_build,
+        )
+        if analyze:
+            _analyze_recorded_motion(out_path, manifest_path)
+        return
+
+    SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
+    out_path = out or (SCREENSHOT_DIR / f"clip_{_timestamp_tag()}_xwd_intrusive.mp4")
+    typer.echo("⚠ forcing xwd burst capture; do not use this as timing ground truth.")
+    typer.echo(f"→ capturing {duration:.1f}s via xwd ...")
+    frames, ts, w, h = _capture_burst(duration, color=True)
+    if len(frames) < 2:
+        typer.echo("✗ Too few frames captured.", err=True)
+        raise typer.Exit(1)
+    eff_fps = len(frames) / (ts[-1] - ts[0]) if ts[-1] > ts[0] else 12.0
+    enc = subprocess.run(
+        [
+            _ffmpeg_exe(),
+            "-y",
+            "-v",
+            "error",
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "bgr24",
+            "-s",
+            f"{w}x{h}",
+            "-r",
+            f"{eff_fps:.3f}",
+            "-i",
+            "pipe:0",
+            "-pix_fmt",
+            "yuv420p",
+            str(out_path),
+        ],
+        input=np.concatenate([f.reshape(-1) for f in frames]).tobytes(),
+        capture_output=True,
+    )
+    if enc.returncode != 0:
+        typer.echo(enc.stderr[-400:].decode(errors="replace"), err=True)
+        raise typer.Exit(1)
+    typer.echo(f"✓ Saved: {out_path}  [{len(frames)} frames @ {eff_fps:.1f}fps]")
+
+
+@cli.command()
+def motion(
+    video: Annotated[
+        Path | None,
+        typer.Option("--video", help="Existing MP4 to analyze."),
+    ] = None,
+    manifest: Annotated[
+        Path | None,
+        typer.Option(
+            "--manifest",
+            help="JSONL manifest for --video, or output path for recording.",
+        ),
+    ] = None,
+    pose: str = typer.Option(
+        "future",
+        "--pose",
+        help="Automation pose when recording: future, longing, overlap, blindspot, none.",
+    ),
+    duration: float = typer.Option(6.0, "--duration", "-d", help="Recording length (seconds)."),
+    fps: float = typer.Option(30.0, "--fps", help="Deterministic recording FPS."),
+    do_build: bool = typer.Option(
+        False,
+        "--build",
+        "-b",
+        help="Build observer-debug before recording.",
+    ),
+    flow: bool = typer.Option(True, "--flow/--no-flow", help="Run optical-flow velocity analysis."),
+) -> None:
+    """
+    Analyze deterministic MP4 + manifest motion metrics.
+
+    With --video and --manifest, analyzes an existing recording. Without
+    --video, first records through the deterministic observer pipeline.
+    """
+    if video is not None:
+        if manifest is None:
+            typer.echo("✗ --manifest is required with --video", err=True)
+            raise typer.Exit(1)
+        _analyze_recorded_motion(video, manifest, flow=flow)
+        return
+
+    out_path, manifest_path = _record_deterministic(
+        pose=pose,
+        duration=duration,
+        fps=fps,
+        out=None,
+        manifest=manifest,
+        do_build=do_build,
+    )
+    _analyze_recorded_motion(out_path, manifest_path, flow=flow)
 
 
 # ── Entry point ────────────────────────────────────────────────────────────────
