@@ -2,32 +2,27 @@
 """
 observe_app.py — Build, launch, and interact with the Future's Gaze OpenGL app.
 
-Exposes enough information for AI-driven testing and observation:
-  screenshot  - capture window + per-region RGB/brightness analysis
-  info        - full diagnostic dump (process, window geometry, pixel analysis)
-  build       - cmake configure + ninja build
-  launch      - start app in background, save PID
-  kill        - terminate running app
-  orbit       - left-mouse drag to rotate camera (dx, dy in pixels)
-  gaze        - toggle G mode, left-drag to rotate the Prediction Core
-  gaze-future / gaze-longing / gaze-overlap
-              - reset the Prediction Core aim, drag to a fixed story check pose,
-                and save a screenshot
-  zoom        - mouse-wheel scroll to zoom camera
-  key         - send keyboard key to the app window
-  click       - click at window-relative coordinates (fractions 0.0-1.0)
-  scripted-gaze
-              - launch with deterministic app-side gaze automation + stderr logs
-  stderr-log  - print recent app stderr observation logs
-  record      - deterministic observer-build framebuffer recording to MP4
-  motion      - analyze deterministic MP4 + manifest motion metrics
+  build        - cmake configure + ninja build
+  launch       - start app in background, save PID
+  kill         - terminate running app
+  info         - full diagnostic dump (process, window, pixel analysis)
+  screenshot   - capture window + per-region RGB/brightness analysis
+  orbit        - left-mouse drag to rotate camera (dx, dy in pixels)
+  gaze         - toggle G mode, left-drag to rotate the Prediction Core
+  zoom         - mouse-wheel scroll to zoom camera
+  key          - send keyboard key to the app window
+  click        - click at window-relative coordinates (fractions 0.0-1.0)
+  scripted-gaze  - deterministic app-side gaze automation + stderr logs
+  visual-gate  - full acceptance gate: build → launch → checkpoint screenshots
+  stderr-log   - print recent app stderr observation logs
+  record       - deterministic observer-build framebuffer recording to MP4
+                 (use --analyze to get motion metrics immediately)
 
 Usage:
-  uv run python observe_app.py info
   uv run python observe_app.py launch --build
-  uv run python observe_app.py screenshot --out /tmp/frame.png
+  uv run python observe_app.py info
+  uv run python observe_app.py visual-gate
   uv run python observe_app.py orbit 200 -50
-  uv run python observe_app.py gaze 180 40
   uv run python observe_app.py zoom 3
   uv run python observe_app.py scripted-gaze future --build
   uv run python observe_app.py stderr-log --tail 160
@@ -41,6 +36,7 @@ import re
 import signal
 import subprocess
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated
 
@@ -49,9 +45,11 @@ import typer
 # ── Constants ─────────────────────────────────────────────────────────────────
 
 PROJECT_ROOT = Path(__file__).parent.parent
-BUILD_DIR = PROJECT_ROOT / "build" / "clang-debug"
+DEV_PRESET = "dev"
+OBSERVER_PRESET = "observer"
+BUILD_DIR = PROJECT_ROOT / "build" / DEV_PRESET
 BINARY = BUILD_DIR / "future_gaze"
-OBSERVER_BUILD_DIR = PROJECT_ROOT / "build" / "observer-debug"
+OBSERVER_BUILD_DIR = PROJECT_ROOT / "build" / OBSERVER_PRESET
 OBSERVER_BINARY = OBSERVER_BUILD_DIR / "future_gaze"
 FRAME_BRIDGE = OBSERVER_BUILD_DIR / "future_gaze_frame_bridge"
 WINDOW_TITLE = "Future's Gaze"
@@ -65,6 +63,54 @@ STORY_POSES: dict[str, tuple[int, int] | None] = {
     "blindspot": (420, 0),
     "none": None,
 }
+
+OBSERVE_RE = re.compile(
+    r"\[observe\]\s+t=(?P<t>[-0-9.]+)\s+label=(?P<label>\S*)\s+"
+    r"gaze_mode=(?P<gaze_mode>[01])\s+yaw=(?P<yaw>[-0-9.]+)\s+"
+    r"pitch=(?P<pitch>[-0-9.]+)\s+zone=(?P<zone>[0-9]+)\s+"
+    r"weights=\((?P<w0>[-0-9.]+),(?P<w1>[-0-9.]+),(?P<w2>[-0-9.]+)\)\s+"
+    r"table_transition=(?P<table_transition>[01])\s+"
+    r"camera_transition=(?P<camera_transition>[01])\s+"
+    r"camera_restage_pending=(?P<camera_restage_pending>[01])"
+)
+
+
+@dataclass(frozen=True)
+class ObserveState:
+    t: float
+    label: str
+    gaze_mode: int
+    yaw: float
+    pitch: float
+    zone: int
+    weights: tuple[float, float, float]
+    table_transition: int
+    camera_transition: int
+    camera_restage_pending: int
+
+
+@dataclass(frozen=True)
+class VisualCheckpoint:
+    label: str
+    expected_zone: int
+    expected_gaze_mode: int
+    require_settled: bool
+    min_zone_weight: float
+
+
+@dataclass(frozen=True)
+class VisualMetrics:
+    full_brightness: float
+    full_black_ratio: float
+    center_brightness: float
+    center_stddev: float
+    center_edge_score: float
+    center_dominant_ratio: float
+    center_black_ratio: float
+    lower_center_brightness: float
+    lower_center_stddev: float
+    lower_center_edge_score: float
+    lower_center_very_dark_ratio: float
 
 cli = typer.Typer(
     help="Interact with Future's Gaze OpenGL window.",
@@ -122,31 +168,6 @@ def _timestamp_tag() -> str:
     """Return a collision-resistant timestamp for generated media filenames."""
     return time.strftime("%Y%m%d_%H%M%S") + f"_{time.time_ns() % 1_000_000_000:09d}"
 
-
-def _build_dir_for_preset(preset: str) -> Path:
-    return PROJECT_ROOT / "build" / preset
-
-
-def _binary_for_preset(preset: str) -> Path:
-    return _build_dir_for_preset(preset) / "future_gaze"
-
-
-def _print_dynamic_observation_warning(command: str) -> None:
-    typer.echo(
-        f"✗ `{command}` is disabled by default: xwd burst capture can starve "
-        "the GLUT loop and freeze app time under WSLg.",
-        err=True,
-    )
-    typer.echo(
-        "  Use deterministic app-side automation instead, e.g. "
-        "`cd scripts && uv run python observe_app.py scripted-gaze future --build`.",
-        err=True,
-    )
-    typer.echo(
-        f"  Then inspect ground truth with `uv run python observe_app.py "
-        f"stderr-log --tail 160` ({LOG_FILE}).",
-        err=True,
-    )
 
 
 # ── Window discovery ───────────────────────────────────────────────────────────
@@ -326,7 +347,7 @@ def _screenshot_xwd(out_path: Path):
 @cli.command()
 def build(
     preset: str = typer.Option(
-        "clang-debug",
+        DEV_PRESET,
         "--preset",
         help="CMake preset to configure/build.",
     ),
@@ -344,7 +365,7 @@ def build(
         cwd=PROJECT_ROOT,
         check=True,
     )
-    typer.echo(f"✓ Build complete: {_binary_for_preset(preset)}")
+    typer.echo(f"✓ Build complete: {PROJECT_ROOT / 'build' / preset / 'future_gaze'}")
 
 
 @cli.command()
@@ -363,7 +384,7 @@ def launch(
 ) -> None:
     """Launch the app in the background. PID saved to /tmp/future_gaze.pid."""
     if do_build:
-        build(preset="clang-debug")
+        build(preset=DEV_PRESET)
 
     if not BINARY.exists():
         typer.echo(f"✗ Binary not found: {BINARY}. Run `build` first.", err=True)
@@ -512,12 +533,341 @@ def _analyze_regions(img) -> None:  # img: PIL.Image.Image
     typer.echo("")
 
 
-def _drag_gaze(dx: int, dy: int, duration: float) -> None:
+def _capture_window_image(out_path: Path):
+    """Capture the app window and return a PIL image, failing loudly on errors."""
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    _ensure_display()
+    img = _screenshot_xwd(out_path)
+    if img is not None:
+        return img.convert("RGB")
+
+    pag = _pag()
+    geo = _find_window()
+    if geo is None:
+        typer.echo("✗ Window not found during visual gate capture.", err=True)
+        raise typer.Exit(1)
+    x, y, w, h = geo
+    img = pag.screenshot(region=(x, y, w, h)).convert("RGB")
+    img.save(str(out_path))
+    return img
+
+
+def _visual_metrics(img) -> VisualMetrics:
+    """Return conservative visibility metrics for black/occluded-frame gating."""
+    _, ImageStat = _pil()
+    w, h = img.size
+    center = img.crop((w // 3, h // 3, 2 * w // 3, 2 * h // 3))
+    lower_center = img.crop((w // 4, int(h * 0.45), 3 * w // 4, int(h * 0.84)))
+    full_stat = ImageStat.Stat(img)
+    center_stat = ImageStat.Stat(center)
+    lower_stat = ImageStat.Stat(lower_center)
+    full_brightness = sum(full_stat.mean[:3]) / 3.0
+    center_brightness = sum(center_stat.mean[:3]) / 3.0
+    center_stddev = sum(center_stat.stddev[:3]) / 3.0
+    lower_center_brightness = sum(lower_stat.mean[:3]) / 3.0
+    lower_center_stddev = sum(lower_stat.stddev[:3]) / 3.0
+
+    def edge_score_for(gray_img) -> float:
+        region_pixels = list(gray_img.tobytes())
+        rw, rh = gray_img.size
+        if rw < 2 or rh < 2:
+            return 0.0
+        total = 0
+        count = 0
+        step = max(1, min(rw, rh) // 120)
+        for y in range(0, rh - step, step):
+            row = y * rw
+            next_row = (y + step) * rw
+            for x in range(0, rw - step, step):
+                p = region_pixels[row + x]
+                total += abs(p - region_pixels[row + x + step])
+                total += abs(p - region_pixels[next_row + x])
+                count += 2
+        return float(total) / float(max(1, count))
+
+    gray = center.convert("L")
+    lower_gray = lower_center.convert("L")
+    full_gray = img.convert("L")
+    pixels = list(gray.tobytes())
+    lower_pixels = list(lower_gray.tobytes())
+    full_pixels = list(full_gray.tobytes())
+    full_black_ratio = sum(1 for p in full_pixels if p <= 3) / max(1, len(full_pixels))
+    center_black_ratio = sum(1 for p in pixels if p <= 3) / max(1, len(pixels))
+    lower_dark_ratio = sum(1 for p in lower_pixels if p <= 8) / max(
+        1, len(lower_pixels)
+    )
+    edge_score = edge_score_for(gray)
+    lower_edge_score = edge_score_for(lower_gray)
+
+    # Quantize luma; a giant dominant bucket means "mostly one flat surface".
+    buckets = [0] * 16
+    for p in pixels:
+        buckets[min(15, p // 16)] += 1
+    dominant_ratio = max(buckets) / max(1, len(pixels))
+    return VisualMetrics(
+        full_brightness=full_brightness,
+        full_black_ratio=full_black_ratio,
+        center_brightness=center_brightness,
+        center_stddev=center_stddev,
+        center_edge_score=edge_score,
+        center_dominant_ratio=dominant_ratio,
+        center_black_ratio=center_black_ratio,
+        lower_center_brightness=lower_center_brightness,
+        lower_center_stddev=lower_center_stddev,
+        lower_center_edge_score=lower_edge_score,
+        lower_center_very_dark_ratio=lower_dark_ratio,
+    )
+
+
+def _parse_observe_line(line: str) -> ObserveState | None:
+    match = OBSERVE_RE.search(line)
+    if match is None:
+        return None
+    return ObserveState(
+        t=float(match.group("t")),
+        label=match.group("label"),
+        gaze_mode=int(match.group("gaze_mode")),
+        yaw=float(match.group("yaw")),
+        pitch=float(match.group("pitch")),
+        zone=int(match.group("zone")),
+        weights=(
+            float(match.group("w0")),
+            float(match.group("w1")),
+            float(match.group("w2")),
+        ),
+        table_transition=int(match.group("table_transition")),
+        camera_transition=int(match.group("camera_transition")),
+        camera_restage_pending=int(match.group("camera_restage_pending")),
+    )
+
+
+def _recent_observe_states() -> list[ObserveState]:
+    if not LOG_FILE.exists():
+        return []
+    states: list[ObserveState] = []
+    for line in LOG_FILE.read_text(errors="replace").splitlines():
+        state = _parse_observe_line(line)
+        if state is not None:
+            states.append(state)
+    return states
+
+
+def _nearest_state(states: list[ObserveState], app_time: float) -> ObserveState | None:
+    if not states:
+        return None
+    return min(states, key=lambda s: abs(s.t - app_time))
+
+
+def _labeled_state(states: list[ObserveState], label: str) -> ObserveState | None:
+    for state in reversed(states):
+        if state.label == label:
+            return state
+    return None
+
+
+def _latest_state_after(app_time: float) -> ObserveState | None:
+    states = [state for state in _recent_observe_states() if state.t >= app_time]
+    return states[-1] if states else None
+
+
+def _checkpoint_state_ready(checkpoint: VisualCheckpoint, state: ObserveState) -> bool:
+    if state.zone != checkpoint.expected_zone:
+        return False
+    if state.gaze_mode != checkpoint.expected_gaze_mode:
+        return False
+    if state.weights[checkpoint.expected_zone] < checkpoint.min_zone_weight:
+        return False
+    if checkpoint.require_settled:
+        return (
+            state.table_transition == 0
+            and state.camera_transition == 0
+            and state.camera_restage_pending == 0
+        )
+    return True
+
+
+def _wait_for_checkpoint_state(
+    checkpoint: VisualCheckpoint,
+    proc: subprocess.Popen,
+    timeout: float,
+) -> ObserveState:
+    deadline = time.monotonic() + timeout
+    last_state: ObserveState | None = None
+    checkpoint_time: float | None = None
+    while time.monotonic() < deadline:
+        if proc.poll() is not None:
+            typer.echo(f"✗ App exited early with rc={proc.returncode}", err=True)
+            raise typer.Exit(1)
+        states = _recent_observe_states()
+        if states:
+            last_state = states[-1]
+        if checkpoint_time is None:
+            labeled = _labeled_state(states, checkpoint.label)
+            if labeled is not None:
+                checkpoint_time = labeled.t
+                if _checkpoint_state_ready(checkpoint, labeled):
+                    return labeled
+        else:
+            for state in reversed(states):
+                if state.t < checkpoint_time:
+                    break
+                if _checkpoint_state_ready(checkpoint, state):
+                    return state
+        time.sleep(0.05)
+
     typer.echo(
-        "⚠ pyautogui input is focus-dependent under WSLg; for deterministic "
-        "checks use `scripted-gaze`.",
+        f"✗ Timed out waiting for checkpoint {checkpoint.label!r}. "
+        f"Last state: {_format_state(last_state)}",
         err=True,
     )
+    raise typer.Exit(1)
+
+
+def _format_state(state: ObserveState | None) -> str:
+    if state is None:
+        return "observe=<missing>"
+    return (
+        f"observe t={state.t:.2f} label={state.label} zone={state.zone} "
+        f"weights=({state.weights[0]:.2f},{state.weights[1]:.2f},{state.weights[2]:.2f}) "
+        f"gaze={state.gaze_mode} table={state.table_transition} "
+        f"camera={state.camera_transition} pending={state.camera_restage_pending}"
+    )
+
+
+def _visual_gate_build_and_tests() -> None:
+    """Run the exact preflight required before the visual acceptance gate."""
+    typer.echo("→ cmake configure...")
+    subprocess.run(["cmake", "--preset", DEV_PRESET], cwd=PROJECT_ROOT, check=True)
+    typer.echo("→ cmake build future_gaze + future_gaze_tests...")
+    subprocess.run(
+        [
+            "cmake",
+            "--build",
+            "--preset",
+            DEV_PRESET,
+            "--target",
+            "future_gaze",
+            "future_gaze_tests",
+        ],
+        cwd=PROJECT_ROOT,
+        check=True,
+    )
+    typer.echo("→ ctest...")
+    subprocess.run(
+        ["ctest", "--test-dir", str(BUILD_DIR), "--output-on-failure"],
+        cwd=PROJECT_ROOT,
+        check=True,
+    )
+
+
+def _require_visual_display() -> None:
+    """Fail clearly when no usable X display is available for window capture."""
+    _ensure_display()
+    env = {**os.environ, "DISPLAY": os.environ.get("DISPLAY", ":0")}
+    try:
+        result = subprocess.run(
+            ["xdpyinfo"],
+            env=env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            timeout=5,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+        typer.echo(
+            "✗ Visual gate requires a valid X display and `xdpyinfo`.",
+            err=True,
+        )
+        raise typer.Exit(1) from exc
+    if result.returncode != 0:
+        detail = result.stderr.decode(errors="replace").strip().splitlines()
+        typer.echo("✗ Visual gate requires a valid X display.", err=True)
+        if detail:
+            typer.echo(f"  xdpyinfo: {detail[-1]}", err=True)
+        raise typer.Exit(1)
+
+
+def _validate_visual_checkpoint(
+    checkpoint: VisualCheckpoint,
+    image_path: Path,
+    metrics: VisualMetrics,
+    state: ObserveState | None,
+) -> list[str]:
+    failures: list[str] = []
+    if metrics.full_brightness < 10.0:
+        failures.append(f"full frame too dark ({metrics.full_brightness:.1f})")
+    if metrics.full_black_ratio > 0.38:
+        failures.append(f"too much pure black in frame ({metrics.full_black_ratio:.2f})")
+    if metrics.center_brightness < 6.0:
+        failures.append(f"center too dark ({metrics.center_brightness:.1f})")
+    if metrics.center_black_ratio > 0.30:
+        failures.append(f"center has too much pure black ({metrics.center_black_ratio:.2f})")
+    if metrics.center_stddev < 3.0:
+        failures.append(f"center too flat/stddev low ({metrics.center_stddev:.1f})")
+    if metrics.center_edge_score < 1.2:
+        failures.append(f"center edge score too low ({metrics.center_edge_score:.1f})")
+    if metrics.center_dominant_ratio > 0.92:
+        failures.append(f"center mostly one luma bucket ({metrics.center_dominant_ratio:.2f})")
+    if metrics.lower_center_very_dark_ratio > 0.30:
+        failures.append(
+            "lower-center foreground too dark "
+            f"({metrics.lower_center_very_dark_ratio:.2f})"
+        )
+    if (
+        metrics.lower_center_brightness < 10.0
+        and metrics.lower_center_edge_score < 0.45
+    ):
+        failures.append(
+            "lower-center has no usable subject detail "
+            f"(brightness={metrics.lower_center_brightness:.1f}, "
+            f"edge={metrics.lower_center_edge_score:.1f})"
+        )
+
+    if state is None:
+        failures.append("missing observe state")
+    else:
+        if state.zone != checkpoint.expected_zone:
+            failures.append(f"zone {state.zone} != expected {checkpoint.expected_zone}")
+        if state.gaze_mode != checkpoint.expected_gaze_mode:
+            failures.append(
+                f"gaze_mode {state.gaze_mode} != expected {checkpoint.expected_gaze_mode}"
+            )
+        if state.weights[checkpoint.expected_zone] < checkpoint.min_zone_weight:
+            failures.append(
+                f"zone weight {state.weights[checkpoint.expected_zone]:.2f} "
+                f"< {checkpoint.min_zone_weight:.2f}"
+            )
+        if checkpoint.require_settled:
+            if state.table_transition != 0:
+                failures.append("table transition not settled")
+            if state.camera_transition != 0:
+                failures.append("camera transition not settled")
+            if state.camera_restage_pending != 0:
+                failures.append("camera restage still pending")
+
+    if failures:
+        typer.echo(f"✗ FAIL {checkpoint.label}: {image_path}", err=True)
+        typer.echo(
+            "  metrics: "
+            f"full={metrics.full_brightness:.1f} "
+            f"full_black={metrics.full_black_ratio:.2f} "
+            f"center={metrics.center_brightness:.1f} "
+            f"center_black={metrics.center_black_ratio:.2f} "
+            f"std={metrics.center_stddev:.1f} "
+            f"edge={metrics.center_edge_score:.1f} "
+            f"dominant={metrics.center_dominant_ratio:.2f} "
+            f"lower={metrics.lower_center_brightness:.1f} "
+            f"lower_std={metrics.lower_center_stddev:.1f} "
+            f"lower_edge={metrics.lower_center_edge_score:.1f} "
+            f"lower_dark={metrics.lower_center_very_dark_ratio:.2f}",
+            err=True,
+        )
+        typer.echo(f"  {_format_state(state)}", err=True)
+        for failure in failures:
+            typer.echo(f"  - {failure}", err=True)
+    return failures
+
+
+def _drag_gaze(dx: int, dy: int, duration: float) -> None:
     geo = _require_window()
     wx, wy, ww, wh = geo
     start_x = wx + ww // 2
@@ -544,20 +894,6 @@ def _drag_gaze(dx: int, dy: int, duration: float) -> None:
     typer.echo(f"✓ Gaze drag ({dx:+d}, {dy:+d})  from ({start_x},{start_y})")
 
 
-def _story_pose(name: str, dx: int, dy: int, duration: float) -> None:
-    typer.echo(f"→ story {name}: reset gaze, drag, then screenshot")
-    geo = _require_window()
-    wx, wy, ww, wh = geo
-    pag = _pag()
-    pag.click(wx + ww // 2, wy + wh // 2)
-    time.sleep(0.05)
-    pag.press("h")
-    time.sleep(0.10)
-    _drag_gaze(dx, dy, duration)
-    time.sleep(0.45)
-    out = SCREENSHOT_DIR / f"story_{name}_{_timestamp_tag()}.png"
-    screenshot(out=out, no_analysis=False)
-
 
 @cli.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
 def orbit(
@@ -573,7 +909,7 @@ def orbit(
     Example: orbit 200 -50
     """
     if len(args) < 2:
-        typer.echo("Error: provide dx and dy  e.g. orbit 200 -50", err=True)
+        typer.echo("Error: orbit dx dy  e.g. orbit 200 -50", err=True)
         raise typer.Exit(1)
     try:
         dx, dy = int(args[0]), int(args[1])
@@ -581,10 +917,6 @@ def orbit(
         typer.echo("Error: dx and dy must be integers", err=True)
         raise typer.Exit(1)
 
-    typer.echo(
-        "⚠ pyautogui drag is focus-dependent under WSLg; verify with screenshot/logs.",
-        err=True,
-    )
     geo = _require_window()
     wx, wy, ww, wh = geo
     start_x = wx + ww // 2
@@ -632,29 +964,6 @@ def gaze(
     _drag_gaze(dx, dy, duration)
 
 
-@cli.command()
-def gaze_future(
-    duration: float = typer.Option(0.34, "--duration", help="Drag animation duration."),
-) -> None:
-    """Fixed check: look at the tabletop glass accident chain and capture."""
-    _story_pose("future", 0, 270, duration)
-
-
-@cli.command()
-def gaze_longing(
-    duration: float = typer.Option(0.34, "--duration", help="Drag animation duration."),
-) -> None:
-    """Fixed check: look toward the rear empty chairs and capture."""
-    _story_pose("longing", 0, 215, duration)
-
-
-@cli.command()
-def gaze_overlap(
-    duration: float = typer.Option(0.34, "--duration", help="Drag animation duration."),
-) -> None:
-    """Fixed check: hold the empty-chair overlap composition and capture."""
-    _story_pose("overlap", 115, 235, duration)
-
 
 @cli.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
 def zoom(
@@ -700,11 +1009,6 @@ def key(
     ),
 ) -> None:
     """Send a keyboard key to the app window (focuses window first via click)."""
-    typer.echo(
-        "⚠ pyautogui key delivery is focus-dependent under WSLg; use app-side "
-        "automation for timing-sensitive checks.",
-        err=True,
-    )
     geo = _require_window()
     wx, wy, ww, wh = geo
     cx, cy = wx + ww // 2, wy + wh // 2
@@ -781,6 +1085,59 @@ def _write_automation_script(pose: str) -> Path:
     return script_path
 
 
+def _visual_gate_checkpoints() -> list[VisualCheckpoint]:
+    return [
+        VisualCheckpoint("initial_settled", 0, 0, True, 0.90),
+        VisualCheckpoint("foresight_aimed", 0, 1, False, 0.72),
+        VisualCheckpoint("foresight_restaged", 0, 0, True, 0.90),
+        VisualCheckpoint("longing_aimed", 1, 1, False, 0.72),
+        VisualCheckpoint("longing_restaged", 1, 0, True, 0.90),
+        VisualCheckpoint("blindspot_aimed", 2, 1, False, 0.72),
+        VisualCheckpoint("blindspot_restaged", 2, 0, True, 0.90),
+        VisualCheckpoint("foresight_return_aimed", 0, 1, False, 0.72),
+        VisualCheckpoint("foresight_return_restaged", 0, 0, True, 0.90),
+    ]
+
+
+def _write_visual_gate_automation_script() -> Path:
+    """Write the full Foresight → Longing → Blindspot → Foresight script."""
+    script_path = Path("/tmp") / f"future_gaze_visual_gate_{_timestamp_tag()}.txt"
+    commands = [
+        "# seconds command args...",
+        "0.05 log visual_gate_start",
+        "1.40 log initial_settled",
+        # Baseline: explicitly enter gaze mode, keep yaw in zone 0, then capture
+        # before the scripted G-exit command. The one-second hold gives Python
+        # window capture enough room without relying on desktop focus.
+        "2.40 gaze_mode on",
+        "2.55 gaze_drag 0 0",
+        "3.30 log foresight_aimed",
+        "4.80 gaze_mode off",
+        "9.50 log foresight_restaged",
+        # 500 px * 0.30 deg/px = 150 deg, safely inside zone 1.
+        "11.10 gaze_mode on",
+        "11.25 gaze_drag 500 0",
+        "12.00 log longing_aimed",
+        "13.50 gaze_mode off",
+        "18.20 log longing_restaged",
+        # +400 px = +120 deg, yaw ~= 270 deg, safely inside zone 2.
+        "19.80 gaze_mode on",
+        "19.95 gaze_drag 400 0",
+        "20.70 log blindspot_aimed",
+        "22.20 gaze_mode off",
+        "26.90 log blindspot_restaged",
+        # +320 px = +96 deg, yaw ~= 366 deg, wraps back to zone 0.
+        "28.50 gaze_mode on",
+        "28.65 gaze_drag 320 0",
+        "29.40 log foresight_return_aimed",
+        "30.90 gaze_mode off",
+        "35.60 log foresight_return_restaged",
+        "",
+    ]
+    script_path.write_text("\n".join(commands))
+    return script_path
+
+
 @cli.command("scripted-gaze")
 def scripted_gaze(
     pose: str = typer.Argument("future", help="future, longing, overlap, or blindspot."),
@@ -809,6 +1166,160 @@ def scripted_gaze(
     script_path = _write_automation_script(pose)
     typer.echo(f"✓ Automation script: {script_path}")
     launch(do_build=do_build, wait=wait, automation=script_path, log_every=log_every)
+
+
+@cli.command("visual-gate")
+def visual_gate(
+    do_build: bool = typer.Option(
+        True,
+        "--build/--no-build",
+        help="Build app/tests and run ctest before running the visual gate.",
+    ),
+    kill_existing: bool = typer.Option(
+        True,
+        "--kill-existing/--keep-existing",
+        help="Terminate a previous script-launched app before starting.",
+    ),
+    out_dir: Annotated[
+        Path | None,
+        typer.Option("--out-dir", help="Directory for checkpoint PNG files."),
+    ] = None,
+    startup_wait: float = typer.Option(
+        4.0,
+        "--startup-wait",
+        help="Maximum seconds to wait for the app window.",
+    ),
+    checkpoint_timeout: float = typer.Option(
+        12.0,
+        "--checkpoint-timeout",
+        help="Maximum wall-clock seconds to wait for each app-side checkpoint label.",
+    ),
+    capture_delay: float = typer.Option(
+        0.18,
+        "--capture-delay",
+        help="Seconds to wait after a checkpoint log so the next rendered frame lands.",
+    ),
+    log_every: float = typer.Option(
+        0.10,
+        "--log-every",
+        help="Emit app-side observation state every N seconds.",
+    ),
+) -> None:
+    """
+    Full visual acceptance gate for the G-key gaze workflow.
+
+    Captures:
+      initial → foresight aimed/restaged → longing aimed/restaged →
+      blindspot aimed/restaged → foresight return aimed/restaged.
+    """
+    if do_build:
+        _visual_gate_build_and_tests()
+
+    if not BINARY.exists():
+        typer.echo(f"✗ Binary not found: {BINARY}. Run `build` first.", err=True)
+        raise typer.Exit(1)
+
+    if kill_existing:
+        _terminate_existing_if_any()
+
+    _require_visual_display()
+    automation_path = _write_visual_gate_automation_script()
+    tag = _timestamp_tag()
+    gate_dir = out_dir or (SCREENSHOT_DIR / "visual_gate" / tag)
+    gate_dir.mkdir(parents=True, exist_ok=True)
+    LOG_FILE.unlink(missing_ok=True)
+
+    env = {
+        **os.environ,
+        "DISPLAY": os.environ.get("DISPLAY", ":0"),
+        "FUTURE_GAZE_AUTOMATION": str(automation_path),
+        "FUTURE_GAZE_LOG_EVERY": f"{max(0.01, log_every):.3f}",
+    }
+
+    typer.echo("═══ Future's Gaze Visual Gate ════════════════════════════")
+    typer.echo(f"→ automation: {automation_path}")
+    typer.echo(f"→ screenshots: {gate_dir}")
+    typer.echo(f"→ log: {LOG_FILE}")
+
+    log = LOG_FILE.open("wb")
+    proc = subprocess.Popen(
+        [str(BINARY)],
+        cwd=PROJECT_ROOT,
+        env=env,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=log,
+        start_new_session=True,
+    )
+    log.close()
+    PID_FILE.write_text(str(proc.pid))
+
+    start = time.monotonic()
+    try:
+        window_found = False
+        while time.monotonic() - start < startup_wait:
+            if proc.poll() is not None:
+                typer.echo(f"✗ App exited early with rc={proc.returncode}", err=True)
+                raise typer.Exit(1)
+            if _find_window() is not None:
+                window_found = True
+                break
+            time.sleep(0.10)
+        if not window_found:
+            typer.echo(
+                "✗ Window not found. Visual gate requires a valid X display.",
+                err=True,
+            )
+            raise typer.Exit(1)
+
+        failures: list[str] = []
+        for checkpoint in _visual_gate_checkpoints():
+            state = _wait_for_checkpoint_state(
+                checkpoint, proc, timeout=checkpoint_timeout
+            )
+            time.sleep(max(0.0, capture_delay))
+            image_path = gate_dir / f"{checkpoint.label}.png"
+            img = _capture_window_image(image_path)
+            capture_state = _latest_state_after(state.t) or state
+            metrics = _visual_metrics(img)
+            checkpoint_failures = _validate_visual_checkpoint(
+                checkpoint, image_path, metrics, capture_state
+            )
+            if checkpoint_failures:
+                failures.extend(f"{checkpoint.label}: {f}" for f in checkpoint_failures)
+            else:
+                typer.echo(
+                    f"PASS {checkpoint.label:<26} {image_path}  "
+                    f"full={metrics.full_brightness:.1f} "
+                    f"black={metrics.full_black_ratio:.2f} "
+                    f"center={metrics.center_brightness:.1f} "
+                    f"edge={metrics.center_edge_score:.1f} "
+                    f"lower={metrics.lower_center_brightness:.1f}/"
+                    f"{metrics.lower_center_edge_score:.1f}  "
+                    f"{_format_state(capture_state)}"
+                )
+
+        if failures:
+            typer.echo("\n── Recent observe log ───────────────────────────────────", err=True)
+            if LOG_FILE.exists():
+                for line in LOG_FILE.read_text(errors="replace").splitlines()[-40:]:
+                    typer.echo(line, err=True)
+            typer.echo("\n✗ VISUAL GATE FAILED", err=True)
+            for failure in failures:
+                typer.echo(f"  - {failure}", err=True)
+            raise typer.Exit(1)
+
+        typer.echo("\n✓ VISUAL GATE PASSED")
+        typer.echo(f"✓ Screenshots: {gate_dir}")
+    finally:
+        if proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait(timeout=3)
+        PID_FILE.unlink(missing_ok=True)
 
 
 @cli.command()
@@ -880,69 +1391,7 @@ def info() -> None:
     screenshot()
 
 
-# ── Motion capture & analysis ──────────────────────────────────────────────────
-
-
-def _grab_frame(win_id: str, w: int, h: int, env: dict, color: bool):
-    """Grab one window frame via xwd | ffmpeg → numpy array (gray or BGR).
-
-    xwd reads the exact GL framebuffer by window id (works under WSLg, where
-    ffmpeg x11grab only sees a black root). Returns None on a malformed frame.
-    """
-    import numpy as np
-
-    pix = "bgr24" if color else "gray"
-    xwd = subprocess.Popen(
-        ["xwd", "-id", win_id, "-silent"],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
-        env=env,
-    )
-    ff = subprocess.run(
-        ["ffmpeg", "-v", "error", "-i", "pipe:0", "-f", "rawvideo", "-pix_fmt", pix, "pipe:1"],
-        stdin=xwd.stdout,
-        capture_output=True,
-    )
-    xwd.stdout.close()  # type: ignore[union-attr]
-    xwd.wait()
-    data = ff.stdout
-    expected = w * h * (3 if color else 1)
-    if len(data) != expected:
-        return None
-    arr = np.frombuffer(data, np.uint8)
-    return arr.reshape(h, w, 3) if color else arr.reshape(h, w)
-
-
-def _capture_burst(duration: float, color: bool = False):
-    """Capture window frames as fast as xwd allows for `duration` seconds.
-
-    WARNING: intrusive under WSLg. Repeated xwd captures can starve the GLUT
-    loop and make app time appear frozen. Keep this behind explicit
-    --force-xwd gates; do not use it as animation timing ground truth.
-
-    Returns (frames, timestamps, w, h). Real per-frame timestamps are returned
-    so the analysis can normalize by actual dt (xwd cadence is ~10-15 fps and
-    slightly uneven), keeping the smoothness metric honest.
-    """
-    import numpy as np
-
-    _ensure_display()
-    env = {**os.environ, "DISPLAY": os.environ.get("DISPLAY", ":0")}
-    win_id = _find_window_id_xwininfo()
-    if win_id is None:
-        typer.echo("✗ Window not found. Is the app running?", err=True)
-        raise typer.Exit(1)
-    _, _, w, h = _require_window()
-
-    frames: list = []
-    ts: list[float] = []
-    t0 = time.time()
-    while time.time() - t0 < duration:
-        f = _grab_frame(win_id, w, h, env, color)
-        if f is not None:
-            frames.append(f.astype(np.float32) if not color else f)
-            ts.append(time.time())
-    return frames, np.array(ts), w, h
+# ── Motion analysis ────────────────────────────────────────────────────────────
 
 
 def _grade(score: float) -> str:
@@ -1198,11 +1647,11 @@ def _record_deterministic(
         raise typer.Exit(1)
 
     if do_build:
-        build(preset="observer-debug")
+        build(preset=OBSERVER_PRESET)
     if not OBSERVER_BINARY.exists() or not FRAME_BRIDGE.exists():
         typer.echo(
             "✗ Observer tools are missing. Run with `--build` or build "
-            "`cmake --preset observer-debug && cmake --build --preset observer-debug`.",
+            f"`cmake --preset {OBSERVER_PRESET} && cmake --build --preset {OBSERVER_PRESET}`.",
             err=True,
         )
         raise typer.Exit(1)
@@ -1343,129 +1792,31 @@ def record(
         False,
         "--build",
         "-b",
-        help="Build observer-debug before recording.",
+        help=f"Build {OBSERVER_PRESET} before recording.",
     ),
     analyze: bool = typer.Option(
         False,
         "--analyze",
-        help="Analyze motion metrics from the encoded MP4 + manifest.",
+        help="Analyze motion metrics immediately after recording.",
     ),
-    force_xwd: bool = typer.Option(
-        False,
-        "--force-xwd",
-        help="Run the known-intrusive xwd burst capture anyway.",
-    ),
+    flow: bool = typer.Option(True, "--flow/--no-flow", help="Run optical-flow in --analyze."),
 ) -> None:
     """
     Record a deterministic observer-build framebuffer stream to MP4.
 
-    The default path records frames from inside the app render loop, flips them
-    through the bridge helper, encodes with bundled ffmpeg, and writes a JSONL
-    manifest. `--force-xwd` is retained only as an intrusive regression fallback.
+    Frames are captured from inside the app render loop, piped through the
+    bridge helper, and encoded with ffmpeg. Use --analyze to get motion metrics.
     """
-    import numpy as np
-
-    if not force_xwd:
-        out_path, manifest_path = _record_deterministic(
-            pose=pose,
-            duration=duration,
-            fps=fps,
-            out=out,
-            manifest=manifest,
-            do_build=do_build,
-        )
-        if analyze:
-            _analyze_recorded_motion(out_path, manifest_path)
-        return
-
-    SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
-    out_path = out or (SCREENSHOT_DIR / f"clip_{_timestamp_tag()}_xwd_intrusive.mp4")
-    typer.echo("⚠ forcing xwd burst capture; do not use this as timing ground truth.")
-    typer.echo(f"→ capturing {duration:.1f}s via xwd ...")
-    frames, ts, w, h = _capture_burst(duration, color=True)
-    if len(frames) < 2:
-        typer.echo("✗ Too few frames captured.", err=True)
-        raise typer.Exit(1)
-    eff_fps = len(frames) / (ts[-1] - ts[0]) if ts[-1] > ts[0] else 12.0
-    enc = subprocess.run(
-        [
-            _ffmpeg_exe(),
-            "-y",
-            "-v",
-            "error",
-            "-f",
-            "rawvideo",
-            "-pix_fmt",
-            "bgr24",
-            "-s",
-            f"{w}x{h}",
-            "-r",
-            f"{eff_fps:.3f}",
-            "-i",
-            "pipe:0",
-            "-pix_fmt",
-            "yuv420p",
-            str(out_path),
-        ],
-        input=np.concatenate([f.reshape(-1) for f in frames]).tobytes(),
-        capture_output=True,
-    )
-    if enc.returncode != 0:
-        typer.echo(enc.stderr[-400:].decode(errors="replace"), err=True)
-        raise typer.Exit(1)
-    typer.echo(f"✓ Saved: {out_path}  [{len(frames)} frames @ {eff_fps:.1f}fps]")
-
-
-@cli.command()
-def motion(
-    video: Annotated[
-        Path | None,
-        typer.Option("--video", help="Existing MP4 to analyze."),
-    ] = None,
-    manifest: Annotated[
-        Path | None,
-        typer.Option(
-            "--manifest",
-            help="JSONL manifest for --video, or output path for recording.",
-        ),
-    ] = None,
-    pose: str = typer.Option(
-        "future",
-        "--pose",
-        help="Automation pose when recording: future, longing, overlap, blindspot, none.",
-    ),
-    duration: float = typer.Option(6.0, "--duration", "-d", help="Recording length (seconds)."),
-    fps: float = typer.Option(30.0, "--fps", help="Deterministic recording FPS."),
-    do_build: bool = typer.Option(
-        False,
-        "--build",
-        "-b",
-        help="Build observer-debug before recording.",
-    ),
-    flow: bool = typer.Option(True, "--flow/--no-flow", help="Run optical-flow velocity analysis."),
-) -> None:
-    """
-    Analyze deterministic MP4 + manifest motion metrics.
-
-    With --video and --manifest, analyzes an existing recording. Without
-    --video, first records through the deterministic observer pipeline.
-    """
-    if video is not None:
-        if manifest is None:
-            typer.echo("✗ --manifest is required with --video", err=True)
-            raise typer.Exit(1)
-        _analyze_recorded_motion(video, manifest, flow=flow)
-        return
-
     out_path, manifest_path = _record_deterministic(
         pose=pose,
         duration=duration,
         fps=fps,
-        out=None,
+        out=out,
         manifest=manifest,
         do_build=do_build,
     )
-    _analyze_recorded_motion(out_path, manifest_path, flow=flow)
+    if analyze:
+        _analyze_recorded_motion(out_path, manifest_path, flow=flow)
 
 
 # ── Entry point ────────────────────────────────────────────────────────────────
