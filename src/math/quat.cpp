@@ -1,5 +1,6 @@
 #include "future_gaze/math/quat.hpp"
 
+#include <algorithm>
 #include <cmath>
 
 namespace future_gaze
@@ -11,6 +12,30 @@ Quat Quat::FromAxisAngle(const Vec3& axis, float radians) {
     const float s = std::sin(half_angle);
     return Quat{std::cos(half_angle), unit_axis.x * s, unit_axis.y * s,
                 unit_axis.z * s};
+}
+
+Quat Quat::Slerp(const Quat& a, const Quat& b, float t) noexcept {
+    float dot = a.w * b.w + a.x * b.x + a.y * b.y + a.z * b.z;
+    // Take the shorter arc: if the quaternions point into opposite hemispheres,
+    // negate one end (q and -q are the same rotation).
+    Quat end = b;
+    if (dot < 0.0f) {
+        end = Quat{-b.w, -b.x, -b.y, -b.z};
+        dot = -dot;
+    }
+    // Nearly parallel — sin(theta) -> 0 makes the spherical form unstable, so
+    // fall back to a normalized linear blend.
+    if (dot > 0.9995f) {
+        return Quat{a.w + (end.w - a.w) * t, a.x + (end.x - a.x) * t,
+                    a.y + (end.y - a.y) * t, a.z + (end.z - a.z) * t}
+            .Normalized();
+    }
+    const float theta = std::acos(std::clamp(dot, -1.0f, 1.0f));
+    const float sin_theta = std::sin(theta);
+    const float wa = std::sin((1.0f - t) * theta) / sin_theta;
+    const float wb = std::sin(t * theta) / sin_theta;
+    return Quat{a.w * wa + end.w * wb, a.x * wa + end.x * wb,
+                a.y * wa + end.y * wb, a.z * wa + end.z * wb};
 }
 
 Mat4 Quat::ToMat4() const noexcept {
@@ -40,7 +65,7 @@ Quat Quat::operator*(const Quat& r) const noexcept {
 Vec3 Quat::Rotate(const Vec3& v) const noexcept {
     // Sandwich product p' = q p q⁻¹ via the double-cross shortcut.
     const Vec3 qv{x, y, z};
-    const Vec3 uv  = Cross(qv, v);
+    const Vec3 uv = Cross(qv, v);
     const Vec3 uuv = Cross(qv, uv);
     return v + uv * (2.0f * w) + uuv * 2.0f;
 }

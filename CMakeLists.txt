@@ -49,3 +49,27 @@ target_link_libraries(future_gaze
         OpenGL::GL
         GLUT::GLUT
 )
+
+enable_testing()
+
+add_executable(future_gaze_tests
+    tests/tf_tree_tests.cpp
+    src/math/mat4.cpp
+    src/math/quat.cpp
+    src/scene/tf_tree.cpp
+)
+
+target_include_directories(future_gaze_tests
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+target_compile_options(future_gaze_tests
+    PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+)
+
+
+add_test(NAME future_gaze_tests COMMAND future_gaze_tests)
