@@ -22,6 +22,7 @@ add_executable(future_gaze
     src/main.cpp
     src/math/mat4.cpp
     src/math/quat.cpp
+    src/physics/physics_world.cpp
     src/render/material.cpp
     src/render/mesh.cpp
     src/render/obj_loader.cpp
@@ -59,9 +60,11 @@ target_link_libraries(future_gaze
 enable_testing()
 
 add_executable(future_gaze_tests
+    tests/physics_tests.cpp
     tests/tf_tree_tests.cpp
     src/math/mat4.cpp
     src/math/quat.cpp
+    src/physics/physics_world.cpp
     src/scene/tf_tree.cpp
 )
 

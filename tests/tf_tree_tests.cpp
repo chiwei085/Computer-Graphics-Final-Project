@@ -7,6 +7,8 @@
 #include "future_gaze/math/quat.hpp"
 #include "future_gaze/scene/tf_tree.hpp"
 
+void RunPhysicsTests();
+
 namespace
 {
 
@@ -119,6 +121,7 @@ void TestWorldVectorMatchesQuatConvention() {
 }  // namespace
 
 int main() {
+    RunPhysicsTests();
     TestLifecycleAndLookup();
     TestReparentRejectsCycles();
     TestLocalMatrixOrder();

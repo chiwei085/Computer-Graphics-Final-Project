@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <numbers>
 #include <string>
@@ -20,6 +21,22 @@ namespace
 constexpr float kPi = std::numbers::pi_v<float>;
 constexpr float kRadToDeg = 180.0f / kPi;
 constexpr float kDanceBeat = 2.65f;
+
+constexpr std::uint32_t kPhysicsObstacle = 1u << 0u;
+constexpr std::uint32_t kPhysicsCharacter = 1u << 1u;
+constexpr std::uint32_t kPhysicsAerial = 1u << 2u;
+constexpr std::uint32_t kPhysicsFragment = 1u << 3u;
+constexpr std::uint32_t kPhysicsEyeSafety = 1u << 4u;
+
+constexpr physics::CollisionMask kObstacleMask{
+    kPhysicsObstacle, kPhysicsCharacter | kPhysicsFragment};
+constexpr physics::CollisionMask kCharacterMask{kPhysicsCharacter,
+                                                kPhysicsObstacle};
+constexpr physics::CollisionMask kAerialMask{kPhysicsAerial, kPhysicsEyeSafety};
+constexpr physics::CollisionMask kFragmentMask{kPhysicsFragment,
+                                               kPhysicsObstacle};
+constexpr physics::CollisionMask kEyeSafetyMask{kPhysicsEyeSafety,
+                                                kPhysicsAerial};
 
 // Binding is name-based, so a missing target is silent until something visibly
 // fails to move. These helpers turn that into a loud one-line warning at
@@ -79,9 +96,11 @@ float Wave(float t, float phase = 0.0f) {
     return std::sin(t * kDanceBeat + phase);
 }
 
-float Snap(float t, float phase = 0.0f) {
-    const float s = Wave(t, phase);
-    return std::copysign(std::sqrt(std::abs(s)), s);
+Vec3 RotateDinnerLocal(Vec3 local, float yaw_deg) {
+    const float yaw = yaw_deg * (kPi / 180.0f);
+    const float s = std::sin(yaw);
+    const float c = std::cos(yaw);
+    return {local.x * c + local.z * s, local.y, -local.x * s + local.z * c};
 }
 
 constexpr std::array<Vec3, 3> kFutureAnchors = {
@@ -103,6 +122,7 @@ void SceneAnimation::Bind(SceneGraph& graph, const GazeController& gaze) {
     gaze_ = &gaze;
 
     // ── Resolve animation targets ────────────────────────────────────────────
+    table_root_ = FindOrWarn(graph, "dinner_scene");
     circuit_ring_ = FindOrWarn(graph, names::kCircuitRing);
     ingenuity_ = FindOrWarn(graph, names::kIngenuity);
     robonaut_ = FindOrWarn(graph, names::kRobonaut);
@@ -110,6 +130,7 @@ void SceneAnimation::Bind(SceneGraph& graph, const GazeController& gaze) {
         const Transform rest = tf_->Local(robonaut_);
         robonaut_rest_position_ = rest.position;
         robonaut_rest_euler_ = rest.euler_deg;
+        robonaut_phys_pos_ = rest.position;  // seed physics at scene start pos
     }
 
     eye_center_ = gaze.Origin();
@@ -171,7 +192,156 @@ void SceneAnimation::Bind(SceneGraph& graph, const GazeController& gaze) {
         .Add(4.6f, 1.0f, ease::SmoothStep)
         .Add(6.0f, 0.0f, ease::InOutCubic);
 
+    BuildPhysicsWorld();
     BuildChannels();
+}
+
+void SceneAnimation::BuildPhysicsWorld() {
+    physics_.Clear();
+    static_physics_.clear();
+
+    auto add_table_static = [&](physics::Collider2D collider,
+                                Vec3 local_position, float local_yaw_deg,
+                                physics::HeightRange height) {
+        const physics::BodyId body = physics_.AddStatic(
+            collider, physics::Transform2D{local_position, local_yaw_deg},
+            height, kObstacleMask);
+        static_physics_.push_back({body, local_position, local_yaw_deg});
+    };
+
+    // Dinner table blockers, authored in dinner_scene local space.
+    add_table_static(physics::Collider2D::Box(1.05f, 0.475f), {}, 0.0f,
+                     {0.70f, 0.86f});
+    for (const Vec3 p : {Vec3{-1.98f, 0.0f, -0.88f}, Vec3{1.98f, 0.0f, -0.88f},
+                         Vec3{-1.98f, 0.0f, 0.88f}, Vec3{1.98f, 0.0f, 0.88f}}) {
+        add_table_static(physics::Collider2D::Circle(0.055f), p, 0.0f,
+                         {0.0f, 0.76f});
+    }
+
+    struct ChairSpec
+    {
+        Vec3 base;
+        float yaw_deg = 0.0f;
+    };
+    constexpr std::array<ChairSpec, 6> kChairs = {{
+        {{-1.20f, 0.0f, -1.38f}, -5.0f},
+        {{0.00f, 0.0f, -1.50f}, 0.0f},
+        {{1.20f, 0.0f, -1.35f}, 7.0f},
+        {{-1.20f, 0.0f, 1.35f}, 185.0f},
+        {{0.00f, 0.0f, 1.22f}, 180.0f},
+        {{1.20f, 0.0f, 1.38f}, 174.0f},
+    }};
+    for (const ChairSpec& chair : kChairs) {
+        add_table_static(physics::Collider2D::Circle(0.34f), chair.base,
+                         chair.yaw_deg, {0.0f, 0.78f});
+        const Vec3 back_local =
+            RotateDinnerLocal({0.0f, 0.0f, -0.20f}, chair.yaw_deg);
+        add_table_static(physics::Collider2D::Box(0.24f, 0.045f),
+                         chair.base + back_local, chair.yaw_deg,
+                         {0.45f, 1.02f});
+    }
+
+    (void)physics_.AddStatic(physics::Collider2D::Circle(2.12f),
+                             physics::Transform2D{eye_center_, 0.0f},
+                             {1.60f, 4.80f}, kEyeSafetyMask);
+
+    if (tf_ != nullptr && tf_->Contains(robonaut_)) {
+        robonaut_body_ = physics_.AddKinematic(
+            physics::Collider2D::Capsule(0.38f, 0.17f), robonaut_phys_pos_,
+            {0.0f, 1.80f}, kCharacterMask);
+    }
+    if (tf_ != nullptr && tf_->Contains(ingenuity_)) {
+        const Vec3 pos = tf_->WorldPosition(ingenuity_);
+        ingenuity_body_ = physics_.AddSensor(physics::Collider2D::Circle(0.46f),
+                                             pos, {2.30f, 4.50f}, kAerialMask);
+    }
+    for (FutureRest& fragment : future_fragments_) {
+        const Vec3 pos = tf_->WorldPosition(fragment.handle);
+        fragment.physics_body =
+            physics_.AddSensor(physics::Collider2D::Circle(0.10f), pos,
+                               {pos.y + 0.05f, pos.y + 0.32f}, kFragmentMask);
+    }
+    for (MemoryRest& fragment : memory_fragments_) {
+        const Vec3 pos = tf_->WorldPosition(fragment.handle);
+        fragment.physics_body =
+            physics_.AddSensor(physics::Collider2D::Circle(0.14f), pos,
+                               {pos.y + 0.03f, pos.y + 0.36f}, kFragmentMask);
+    }
+
+    SyncPhysicsStaticObstacles();
+}
+
+void SceneAnimation::SyncPhysicsStaticObstacles() {
+    Vec3 root_pos{};
+    float root_yaw = 0.0f;
+    if (tf_ != nullptr && tf_->Contains(table_root_)) {
+        const Transform table = tf_->Local(table_root_);
+        root_pos = table.position;
+        root_yaw = table.euler_deg.y;
+    }
+
+    if (root_yaw == last_table_yaw_ && root_pos.x == last_table_pos_.x &&
+        root_pos.z == last_table_pos_.z) {
+        return;
+    }
+    last_table_yaw_ = root_yaw;
+    last_table_pos_ = root_pos;
+
+    for (const StaticPhysicsBinding& binding : static_physics_) {
+        const Vec3 world_position =
+            root_pos + RotateDinnerLocal(binding.local_position, root_yaw);
+        physics_.SetBodyTransform(binding.body, world_position,
+                                  root_yaw + binding.local_yaw_deg);
+    }
+}
+
+Vec3 SceneAnimation::ResolveSensorPosition(physics::BodyId body, Vec3 desired,
+                                           float yaw_deg) {
+    if (!body.IsValid()) {
+        return desired;
+    }
+    Vec3 resolved = desired;
+    for (int i = 0; i < 3; ++i) {
+        physics_.SetBodyTransform(body, resolved, yaw_deg);
+        const std::vector<physics::Contact> contacts =
+            physics_.QueryOverlaps(body);
+        if (contacts.empty()) {
+            break;
+        }
+        Vec3 correction{};
+        for (const physics::Contact& contact : contacts) {
+            const float push = std::min(contact.penetration + 0.002f, 0.08f);
+            correction = correction + contact.normal * push;
+        }
+        resolved = resolved + Vec3{correction.x, 0.0f, correction.z};
+    }
+    physics_.SetBodyTransform(body, resolved, yaw_deg);
+    return resolved;
+}
+
+void SceneAnimation::SyncFragmentSensor(physics::BodyId body, TfHandle handle) {
+    if (tf_ == nullptr || !body.IsValid() || !tf_->Contains(handle)) {
+        return;
+    }
+    const Vec3 pos = tf_->WorldPosition(handle);
+    Transform local = tf_->Local(handle);
+    physics_.SetBodyHeight(body, {pos.y + 0.04f, pos.y + 0.32f});
+    physics_.SetBodyTransform(body, pos, local.euler_deg.y);
+
+    Vec3 correction{};
+    for (const physics::Contact& contact : physics_.QueryOverlaps(body)) {
+        const float push = std::min(contact.penetration + 0.002f, 0.035f);
+        correction = correction + contact.normal * push;
+    }
+    if (std::abs(correction.x) <= 0.0001f &&
+        std::abs(correction.z) <= 0.0001f) {
+        return;
+    }
+
+    local.position = local.position + Vec3{correction.x, 0.0f, correction.z};
+    tf_->SetLocal(handle, local);
+    physics_.SetBodyTransform(body, tf_->WorldPosition(handle),
+                              local.euler_deg.y);
 }
 
 void SceneAnimation::BuildChannels() {
@@ -206,6 +376,8 @@ void SceneAnimation::BuildChannels() {
         ingenuity_world_ = {eye_center_.x + kRadius * std::cos(a),
                             eye_center_.y + bob,
                             eye_center_.z + kRadius * std::sin(a)};
+        ingenuity_world_ = ResolveSensorPosition(
+            ingenuity_body_, ingenuity_world_, -a * kRadToDeg + 90.0f);
         if (tf_ != nullptr && tf_->Contains(ingenuity_)) {
             Transform local = tf_->Local(ingenuity_);
             local.position = ingenuity_world_;
@@ -229,7 +401,8 @@ void SceneAnimation::BuildChannels() {
             Transform local = r.local;
             switch (r.kind) {
                 case FutureKind::Slice: {
-                    const float lead = ease::Clamp01(w * (1.16f - slot * 0.055f));
+                    const float lead =
+                        ease::Clamp01(w * (1.16f - slot * 0.055f));
                     local.position = r.local.position +
                                      Vec3{0.0f, 0.065f * slot * lead, 0.0f};
                     local.scale = {
@@ -242,7 +415,8 @@ void SceneAnimation::BuildChannels() {
                     break;
                 }
                 case FutureKind::Trajectory: {
-                    const float lead = ease::Clamp01(w * (1.05f - slot * 0.06f));
+                    const float lead =
+                        ease::Clamp01(w * (1.05f - slot * 0.06f));
                     local.scale = r.local.scale * (0.03f + 0.97f * lead);
                     local.euler_deg =
                         r.local.euler_deg +
@@ -251,14 +425,16 @@ void SceneAnimation::BuildChannels() {
                     break;
                 }
                 case FutureKind::Stain: {
-                    const float spread = ease::Clamp01(w * (1.0f - slot * 0.14f));
+                    const float spread =
+                        ease::Clamp01(w * (1.0f - slot * 0.14f));
                     local.scale = {r.local.scale.x * spread, r.local.scale.y,
                                    r.local.scale.z * spread};
                     local.euler_deg.y = r.local.euler_deg.y + 9.0f * spread;
                     break;
                 }
                 case FutureKind::Shard: {
-                    const float scatter = ease::Clamp01(w * (1.08f - slot * 0.04f));
+                    const float scatter =
+                        ease::Clamp01(w * (1.08f - slot * 0.04f));
                     local.scale = r.local.scale * scatter;
                     local.position =
                         r.local.position + Vec3{0.025f * slot * scatter, 0.0f,
@@ -269,12 +445,14 @@ void SceneAnimation::BuildChannels() {
                     break;
                 }
                 case FutureKind::BranchProp: {
-                    const float lead = ease::Clamp01(w * (1.18f - slot * 0.075f));
+                    const float lead =
+                        ease::Clamp01(w * (1.18f - slot * 0.075f));
                     const Vec3 origin =
                         kFutureAnchors[static_cast<std::size_t>(r.target)];
                     const Vec3 tucked =
                         origin + Vec3{0.06f * slot, -0.27f, 0.08f};
-                    local.position = tucked + (r.local.position - tucked) * lead;
+                    local.position =
+                        tucked + (r.local.position - tucked) * lead;
                     local.scale = r.local.scale * (0.08f + 0.92f * lead);
                     local.euler_deg =
                         r.local.euler_deg +
@@ -285,6 +463,7 @@ void SceneAnimation::BuildChannels() {
                 }
             }
             tf_->SetLocal(r.handle, local);
+            SyncFragmentSensor(r.physics_body, r.handle);
         }
     });
 
@@ -339,7 +518,8 @@ void SceneAnimation::BuildChannels() {
                     const Vec3 chair =
                         kMemoryAnchors[static_cast<std::size_t>(r.target)] +
                         Vec3{0.0f, -0.22f, -0.18f};
-                    const float open = ease::Clamp01(w * (1.10f - r.slot * 0.055f));
+                    const float open =
+                        ease::Clamp01(w * (1.10f - r.slot * 0.055f));
                     const float pulse =
                         0.985f + 0.015f * std::sin(t * 1.3f + r.slot);
                     local.scale =
@@ -353,7 +533,62 @@ void SceneAnimation::BuildChannels() {
                 }
             }
             tf_->SetLocal(r.handle, local);
+            SyncFragmentSensor(r.physics_body, r.handle);
         }
+    });
+
+    // ── Patrol + collision physics
+    // ──────────────────────────────────────── Spring-mass-damper (ζ ≈ 0.71)
+    // follows an elliptical perimeter; the new physics world owns the actual
+    // swept movement so frame spikes cannot jump through table/chair blockers.
+    animator_.Add("robonaut_patrol", [this](float t, float dt) {
+        constexpr float kRx = 2.4f;
+        constexpr float kRz = 1.8f;
+        constexpr float kCz = 0.5f;
+        constexpr float kOmega = 0.08f;
+        constexpr float kSpring = 2.0f;
+        constexpr float kDamp = 2.0f;
+        constexpr float kMaxSpeed = 1.5f;
+
+        if (!robonaut_body_.IsValid()) {
+            return;
+        }
+        const float safe_dt = std::max(dt, 0.0001f);
+
+        // ── Spring toward world-space patrol target
+        // ───────────────────────────
+        const float ta = t * kOmega;
+        const float tx = kRx * std::cos(ta);
+        const float tz = kCz + kRz * std::sin(ta);
+        const float ax = (tx - robonaut_phys_pos_.x) * kSpring -
+                         robonaut_phys_vel_.x * kDamp;
+        const float az = (tz - robonaut_phys_pos_.z) * kSpring -
+                         robonaut_phys_vel_.z * kDamp;
+        robonaut_phys_vel_.x += ax * safe_dt;
+        robonaut_phys_vel_.z += az * safe_dt;
+        const float spd =
+            std::sqrt(robonaut_phys_vel_.x * robonaut_phys_vel_.x +
+                      robonaut_phys_vel_.z * robonaut_phys_vel_.z);
+        if (spd > kMaxSpeed) {
+            const float inv = kMaxSpeed / spd;
+            robonaut_phys_vel_.x *= inv;
+            robonaut_phys_vel_.z *= inv;
+        }
+
+        const Vec3 desired_delta{robonaut_phys_vel_.x * safe_dt, 0.0f,
+                                 robonaut_phys_vel_.z * safe_dt};
+        physics::MoveOptions options;
+        options.max_iterations = 5;
+        options.skin = 0.006f;
+        const physics::MoveResult move = physics_.MoveKinematic(
+            robonaut_body_, desired_delta, safe_dt, options);
+
+        robonaut_phys_pos_ = move.final_position;
+        robonaut_phys_vel_.x = move.applied_delta.x / safe_dt;
+        robonaut_phys_vel_.z = move.applied_delta.z / safe_dt;
+
+        robonaut_rest_position_.x = robonaut_phys_pos_.x;
+        robonaut_rest_position_.z = robonaut_phys_pos_.z;
     });
 
     // ── Gaze tracking
@@ -376,93 +611,41 @@ void SceneAnimation::BuildChannels() {
     });
 
     animator_.Add("robonaut_procedural_dance", [this](float t, float) {
+        // All geometry lives on the Center node (OBJ has no joint rigging).
+        // Only Centre and Head pivots carry meshes; all other pivot nodes are
+        // empty. Animating them would corrupt the head's compound rotation.
+        // Motion design: sentinel-stance weight shift + head scan.
         const float beat = t * kDanceBeat;
         const float bounce = 0.5f + 0.5f * std::sin(beat * 2.0f);
         if (tf_ != nullptr && tf_->Contains(robonaut_)) {
             Transform local = tf_->Local(robonaut_);
             local.position =
-                robonaut_rest_position_ + Vec3{0.020f * std::sin(beat * 0.5f),
-                                               0.055f * bounce,
-                                               0.030f * std::sin(beat + 0.65f)};
+                robonaut_rest_position_ + Vec3{0.010f * std::sin(beat * 0.4f),
+                                               0.030f * bounce,
+                                               0.015f * std::sin(beat + 0.65f)};
             local.euler_deg.x =
-                robonaut_rest_euler_.x + 5.0f * std::sin(beat + 0.6f);
+                robonaut_rest_euler_.x + 2.0f * std::sin(beat + 0.6f);
             local.euler_deg.z =
-                robonaut_rest_euler_.z + 7.0f * std::sin(beat * 0.5f);
+                robonaut_rest_euler_.z + 3.0f * std::sin(beat * 0.5f);
             tf_->SetLocal(robonaut_, local);
         }
         for (const DanceRest& joint : robonaut_dance_joints_) {
             Vec3 euler{};
             Vec3 offset{};
             if (joint.role == "center") {
-                offset = {0.0f, 0.035f * std::abs(Wave(t)), 0.0f};
-                euler = {4.0f * Wave(t, 1.2f), 0.0f, 10.0f * Snap(t)};
-            }
-            else if (joint.role == "lower_body") {
-                euler = {9.0f * Wave(t, 1.1f), 12.0f * Wave(t, 0.2f),
-                         15.0f * Wave(t, 2.0f)};
-            }
-            else if (joint.role == "upper_body") {
-                euler = {20.0f * Wave(t, 2.2f), 12.0f * Wave(t, 0.9f),
-                         26.0f * Snap(t, 0.0f)};
+                // Gentle sentinel sway — amplitude kept small so the rigid
+                // mesh reads as balanced, not flailing.
+                offset = {0.0f, 0.018f * std::abs(Wave(t)), 0.0f};
+                euler = {2.5f * Wave(t, 0.8f), 0.0f, 3.5f * Wave(t)};
             }
             else if (joint.role == "head") {
-                euler = {13.0f * Wave(t, 2.0f), 30.0f * Snap(t, 0.4f),
-                         16.0f * Wave(t, 1.5f)};
+                // Neck ring is a single-DOF pitch joint: nod only.
+                // Yaw is handled by the whole-body robonaut_track channel;
+                // roll is not mechanically possible on this design.
+                euler = {10.0f * Wave(t, 1.5f), 0.0f, 0.0f};
             }
-            else if (joint.role == "left_shoulder") {
-                euler = {12.0f * Wave(t, 0.7f), 0.0f, 20.0f * Wave(t, 1.8f)};
-            }
-            else if (joint.role == "right_shoulder") {
-                euler = {12.0f * Wave(t, 3.85f), 0.0f, -20.0f * Wave(t, 1.8f)};
-            }
-            else if (joint.role == "left_arm") {
-                euler = {55.0f * Wave(t, 0.0f) - 18.0f, 30.0f * Wave(t, 1.1f),
-                         92.0f * Snap(t, 0.35f)};
-            }
-            else if (joint.role == "right_arm") {
-                euler = {55.0f * Wave(t, kPi) - 18.0f, -30.0f * Wave(t, 1.1f),
-                         -92.0f * Snap(t, 0.35f)};
-            }
-            else if (joint.role == "left_elbow") {
-                euler = {68.0f + 32.0f * Wave(t, 1.2f), 10.0f * Wave(t, 2.0f),
-                         28.0f * Snap(t, 2.7f)};
-            }
-            else if (joint.role == "right_elbow") {
-                euler = {68.0f + 32.0f * Wave(t, 4.35f), -10.0f * Wave(t, 2.0f),
-                         -28.0f * Snap(t, 2.7f)};
-            }
-            else if (joint.role == "left_wrist") {
-                euler = {22.0f * Wave(t, 2.5f), 36.0f * Snap(t, 0.8f),
-                         45.0f * Wave(t, 1.7f)};
-            }
-            else if (joint.role == "right_wrist") {
-                euler = {22.0f * Wave(t, 5.65f), -36.0f * Snap(t, 0.8f),
-                         -45.0f * Wave(t, 1.7f)};
-            }
-            else if (joint.role == "left_leg") {
-                euler = {28.0f * Wave(t, 3.15f), 5.0f * Wave(t, 0.4f),
-                         16.0f * Wave(t, 1.1f)};
-            }
-            else if (joint.role == "right_leg") {
-                euler = {28.0f * Wave(t, 0.0f), -5.0f * Wave(t, 0.4f),
-                         -16.0f * Wave(t, 1.1f)};
-            }
-            else if (joint.role == "left_knee") {
-                euler = {44.0f + 26.0f * Wave(t, 0.4f), 0.0f,
-                         9.0f * Wave(t, 2.0f)};
-            }
-            else if (joint.role == "right_knee") {
-                euler = {44.0f + 26.0f * Wave(t, 3.55f), 0.0f,
-                         -9.0f * Wave(t, 2.0f)};
-            }
-            else if (joint.role == "left_ankle") {
-                euler = {-18.0f * Wave(t, 0.4f), 10.0f * Wave(t, 1.6f),
-                         14.0f * Snap(t, 2.2f)};
-            }
-            else if (joint.role == "right_ankle") {
-                euler = {-18.0f * Wave(t, 3.55f), -10.0f * Wave(t, 1.6f),
-                         -14.0f * Snap(t, 2.2f)};
-            }
+            // All other pivot nodes (upper_body, lower_body, arms, legs, …)
+            // hold their rest pose; their euler stays {0,0,0}.
             Transform local = joint.local;
             local.position = joint.local.position + offset;
             local.euler_deg = joint.local.euler_deg + euler;
@@ -472,6 +655,7 @@ void SceneAnimation::BuildChannels() {
 }
 
 void SceneAnimation::Update(float delta_seconds) {
+    SyncPhysicsStaticObstacles();
     animator_.Update(delta_seconds);
 }
 
@@ -513,11 +697,6 @@ void SceneAnimation::BindRobonautDance(SceneGraph& graph) {
     add(names::kRobonautDanceRightLeg, "right_leg");
     add(names::kRobonautDanceRightKnee, "right_knee");
     add(names::kRobonautDanceRightAnkle, "right_ankle");
-
-    std::fprintf(stderr,
-                 "[SceneAnimation] Robonaut procedural mesh dance enabled "
-                 "(%zu mesh pivots).\n",
-                 robonaut_dance_joints_.size());
 }
 
 // Gating is now per gaze ZONE, not per spatial target: rotating the eye into
