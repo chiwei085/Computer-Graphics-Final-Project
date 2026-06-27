@@ -1,6 +1,6 @@
 #include "future_gaze/render/obj_loader.hpp"
 
-#include <charconv>
+#include <cstdlib>
 #include <fstream>
 #include <string>
 #include <string_view>
@@ -16,10 +16,10 @@ namespace
 bool ParseFloat(std::string_view& sv, float& out) {
     while (!sv.empty() && sv.front() == ' ') sv.remove_prefix(1);
     if (sv.empty()) return false;
-    const auto [ptr, ec] =
-        std::from_chars(sv.data(), sv.data() + sv.size(), out);
-    if (ec != std::errc{}) return false;
-    sv.remove_prefix(static_cast<std::size_t>(ptr - sv.data()));
+    char* end = nullptr;
+    out = std::strtof(sv.data(), &end);
+    if (end == sv.data()) return false;
+    sv.remove_prefix(static_cast<std::size_t>(end - sv.data()));
     return true;
 }
 

@@ -2,6 +2,15 @@
 
 #include <GL/freeglut.h>
 
+// GL_LIGHT_MODEL_COLOR_CONTROL and GL_SEPARATE_SPECULAR_COLOR are OpenGL 1.2
+// constants absent from Windows' opengl32 headers (which stop at 1.1).
+#ifndef GL_LIGHT_MODEL_COLOR_CONTROL
+#define GL_LIGHT_MODEL_COLOR_CONTROL 0x81F8
+#endif
+#ifndef GL_SEPARATE_SPECULAR_COLOR
+#define GL_SEPARATE_SPECULAR_COLOR 0x81FA
+#endif
+
 #include <algorithm>
 #include <array>
 #include <cmath>

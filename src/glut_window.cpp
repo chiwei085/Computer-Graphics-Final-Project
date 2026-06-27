@@ -3,7 +3,6 @@
 #include <GL/freeglut.h>
 
 #include <algorithm>
-#include <charconv>
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
@@ -22,10 +21,9 @@ namespace
 {
 
 float ParseFloatPrefix(std::string_view text, float fallback) {
-    float parsed = fallback;
-    const auto result =
-        std::from_chars(text.data(), text.data() + text.size(), parsed);
-    return (result.ptr != text.data()) ? parsed : fallback;
+    char* end = nullptr;
+    const float parsed = std::strtof(text.data(), &end);
+    return (end != text.data()) ? parsed : fallback;
 }
 
 }  // namespace
