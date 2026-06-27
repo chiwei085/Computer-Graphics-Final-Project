@@ -44,9 +44,8 @@ target_include_directories(future_gaze
 
 target_compile_options(future_gaze
     PRIVATE
-        -Wall
-        -Wextra
-        -Wpedantic
+        $<$<CXX_COMPILER_ID:MSVC>:/W4>
+        $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wall;-Wextra;-Wpedantic>
 )
 
 target_link_libraries(future_gaze
@@ -82,9 +81,8 @@ target_include_directories(future_gaze_tests
 
 target_compile_options(future_gaze_tests
     PRIVATE
-        -Wall
-        -Wextra
-        -Wpedantic
+        $<$<CXX_COMPILER_ID:MSVC>:/W4>
+        $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wall;-Wextra;-Wpedantic>
 )
 
 target_link_libraries(future_gaze_tests
@@ -117,8 +115,7 @@ if(FUTURE_GAZE_OBSERVER_TOOLS)
 
     target_compile_options(future_gaze_frame_bridge
         PRIVATE
-            -Wall
-            -Wextra
-            -Wpedantic
+            $<$<CXX_COMPILER_ID:MSVC>:/W4>
+            $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wall;-Wextra;-Wpedantic>
     )
 endif()

@@ -21,13 +21,30 @@
     {
       "name": "release",
       "displayName": "Release",
-      "description": "Optimized clang+ninja build for final delivery.",
+      "description": "Optimised release build. Uses the system default C++ compiler; any C++20-capable toolchain (clang, GCC, MSVC, Apple Clang) works. Requires Ninja.",
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/${presetName}",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "CMAKE_CXX_COMPILER": "clang++",
-        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "OFF"
+      }
+    },
+    {
+      "name": "release-clang",
+      "displayName": "Release (clang explicit)",
+      "description": "Same as release but pins clang++ — useful when the system default is GCC.",
+      "inherits": "release",
+      "cacheVariables": {
+        "CMAKE_CXX_COMPILER": "clang++"
+      }
+    },
+    {
+      "name": "release-vs",
+      "displayName": "Release (Visual Studio / no Ninja)",
+      "description": "Release build for MSVC users who open the project in Visual Studio. No generator is specified so Visual Studio picks its own (MSBuild); Ninja is not required. CMAKE_BUILD_TYPE is intentionally omitted because multi-config generators ignore it — the build preset passes --config Release instead.",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "OFF"
       }
     },
     {
@@ -37,6 +54,18 @@
       "inherits": "dev",
       "cacheVariables": {
         "FUTURE_GAZE_OBSERVER_TOOLS": "ON"
+      }
+    },
+    {
+      "name": "ci",
+      "displayName": "CI",
+      "description": "Release build for CI runners (Linux/macOS). Pins clang++ because CI scripts install it explicitly.",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/ci",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_CXX_COMPILER": "clang++",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "OFF"
       }
     }
   ],
@@ -50,8 +79,21 @@
       "configurePreset": "release"
     },
     {
+      "name": "release-clang",
+      "configurePreset": "release-clang"
+    },
+    {
+      "name": "release-vs",
+      "configurePreset": "release-vs",
+      "configuration": "Release"
+    },
+    {
       "name": "observer",
       "configurePreset": "observer"
+    },
+    {
+      "name": "ci",
+      "configurePreset": "ci"
     }
   ],
   "testPresets": [
@@ -63,8 +105,30 @@
       }
     },
     {
+      "name": "release",
+      "configurePreset": "release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "release-vs",
+      "configurePreset": "release-vs",
+      "configuration": "Release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
       "name": "observer",
       "configurePreset": "observer",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "ci",
+      "configurePreset": "ci",
       "output": {
         "outputOnFailure": true
       }

@@ -4,13 +4,13 @@ An interactive 3D scene built entirely on the OpenGL fixed pipeline.
 
 ## Requirements
 
-| Dependency   | Minimum version | Notes                                      |
-| ------------ | --------------- | ------------------------------------------ |
-| C++ compiler | C++20           | Tested with **clang++ 17+**                |
-| CMake        | 3.24            |                                            |
-| Ninja        | any             |                                            |
-| OpenGL       | any legacy      | Must support `GL_LIGHTING`, stencil buffer |
-| FreeGLUT     | 3.x             | `libglut-dev` on Debian/Ubuntu             |
+| Dependency   | Minimum version | Notes                                           |
+| ------------ | --------------- | ----------------------------------------------- |
+| C++ compiler | C++20           | clang 17+, GCC 13+, Apple Clang 15+, MSVC 19.38+ |
+| CMake        | 3.24            |                                                 |
+| Ninja        | any             | cross-platform; required by all presets         |
+| OpenGL       | any legacy      | Must support `GL_LIGHTING`, stencil buffer      |
+| FreeGLUT     | 3.x             | provides `<GL/freeglut.h>`                      |
 
 On **Ubuntu / Debian**:
 
@@ -27,23 +27,82 @@ sudo pacman -S clang ninja cmake mesa freeglut
 On **macOS (Homebrew)** — OpenGL is deprecated but still functional:
 
 ```bash
-brew install ninja cmake
-# Xcode Command Line Tools supply clang and OpenGL/GLUT
+# Xcode Command Line Tools supply Apple Clang and OpenGL.
+# freeglut must come from Homebrew — the system GLUT.framework
+# does not provide <GL/freeglut.h>.
+brew install ninja cmake freeglut
 ```
+
+On **Windows**:
+
+*Option A — MSYS2 (MinGW-w64 or clang64, simplest):*
+
+```bash
+# In an MSYS2 shell for your target environment, e.g. clang64:
+pacman -S mingw-w64-clang-x86_64-clang \
+          mingw-w64-clang-x86_64-cmake \
+          mingw-w64-clang-x86_64-ninja \
+          mingw-w64-clang-x86_64-freeglut
+```
+
+Uses the `release` preset (Ninja available in MSYS2).
+
+*Option B — Visual Studio 2019/2022 + vcpkg (no Ninja required):*
+
+```powershell
+# Install freeglut via vcpkg (once):
+vcpkg install freeglut:x64-windows
+
+# Open the repository folder in Visual Studio — it reads CMakePresets.json
+# automatically and shows the "Release (Visual Studio / no Ninja)" preset.
+#
+# Or build from a Developer PowerShell:
+cmake --preset release-vs -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
+cmake --build --preset release-vs
+```
+
+The `release-vs` preset omits the `generator` field so Visual Studio picks its
+own (MSBuild). Ninja is not required.
 
 ---
 
 ## Building (Release)
 
+The `release` preset uses whichever C++20 compiler CMake finds first, so the
+same commands work on Linux (GCC or clang), macOS (Apple Clang), and Windows
+(MSVC or MinGW).
+
 ```bash
-# Configure
+# Configure — uses the system default compiler
 cmake --preset release
 
 # Compile
 cmake --build --preset release
 ```
 
-The binary is written to `build/release/future_gaze`.
+To pin clang++ explicitly (e.g. on a system where GCC is the default):
+
+```bash
+cmake --preset release-clang
+cmake --build --preset release-clang
+```
+
+For **Visual Studio on Windows** (Ninja not required):
+
+```powershell
+cmake --preset release-vs
+cmake --build --preset release-vs
+```
+
+The binary is written to `build/release/future_gaze` (Ninja presets) or
+`build/release-vs/Release/future_gaze.exe` (Visual Studio preset).
+
+> **macOS**: pass `-DCMAKE_PREFIX_PATH=$(brew --prefix freeglut)` to
+> configure so CMake can locate the Homebrew freeglut headers and library:
+> ```bash
+> cmake --preset release -DCMAKE_PREFIX_PATH="$(brew --prefix freeglut)"
+> cmake --build --preset release
+> ```
 
 To also run the bundled test suite after building:
 
