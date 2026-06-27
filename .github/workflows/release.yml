@@ -1,0 +1,130 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            preset: ci
+            asset: future_gaze-linux-x86_64.tar.gz
+          - os: macos-14
+            preset: ci
+            asset: future_gaze-macos-arm64.tar.gz
+          - os: windows-latest
+            preset: ci-windows
+            asset: future_gaze-windows-x86_64.zip
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── Linux ──────────────────────────────────────────────────────────────
+      - name: Install dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y \
+            clang ninja-build \
+            freeglut3-dev \
+            libgl1-mesa-dev libglu1-mesa-dev
+
+      # ── macOS ──────────────────────────────────────────────────────────────
+      - name: Install dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install ninja freeglut
+          FREEGLUT_PREFIX="$(brew --prefix freeglut)"
+          echo "FREEGLUT_INCLUDE=$FREEGLUT_PREFIX/include" >> "$GITHUB_ENV"
+          FREEGLUT_LIB="$(find "$FREEGLUT_PREFIX/lib" -name 'libglut*.dylib' | sort | head -1)"
+          echo "FREEGLUT_LIB=$FREEGLUT_LIB" >> "$GITHUB_ENV"
+
+      # ── Windows ────────────────────────────────────────────────────────────
+      - name: Setup MSVC environment (Windows)
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Install dependencies (Windows)
+        if: runner.os == 'Windows'
+        run: vcpkg install freeglut:x64-windows
+
+      # ── Configure ──────────────────────────────────────────────────────────
+      - name: Configure (Linux)
+        if: runner.os == 'Linux'
+        run: cmake --preset ${{ matrix.preset }}
+
+      - name: Configure (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          cmake --preset ${{ matrix.preset }} \
+            -DGLUT_INCLUDE_DIR="$FREEGLUT_INCLUDE" \
+            -DGLUT_glut_LIBRARY="$FREEGLUT_LIB"
+
+      - name: Configure (Windows)
+        if: runner.os == 'Windows'
+        run: >
+          cmake --preset ${{ matrix.preset }}
+          -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+
+      # ── Build ──────────────────────────────────────────────────────────────
+      - name: Build
+        run: cmake --build --preset ${{ matrix.preset }}
+
+      # ── Package ────────────────────────────────────────────────────────────
+      - name: Package (Linux)
+        if: runner.os == 'Linux'
+        run: tar czf ${{ matrix.asset }} -C build/ci future_gaze
+
+      - name: Package (macOS)
+        if: runner.os == 'macOS'
+        run: tar czf ${{ matrix.asset }} -C build/ci future_gaze
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          $out = "dist"
+          New-Item -ItemType Directory -Path $out | Out-Null
+          Copy-Item "build\ci-windows\future_gaze.exe" "$out\"
+          # Bundle freeglut.dll so the exe runs without vcpkg installed
+          $dll = "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows\bin\freeglut.dll"
+          if (Test-Path $dll) { Copy-Item $dll "$out\" }
+          Compress-Archive -Path "$out\*" -DestinationPath "${{ matrix.asset }}"
+
+      # Artifacts are available on the Actions page for every run (including
+      # manual dispatch).  The release job below only fires on tag pushes.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: ${{ matrix.asset }}
+          retention-days: 14
+
+  # ── GitHub Release (tag pushes only) ───────────────────────────────────────
+  release:
+    needs: build
+    runs-on: ubuntu-24.04
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --repo "${{ github.repository }}" \
+            --title "Future's Gaze ${{ github.ref_name }}" \
+            --generate-notes \
+            artifacts/*
