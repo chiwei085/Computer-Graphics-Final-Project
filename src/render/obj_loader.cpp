@@ -1,5 +1,6 @@
 #include "future_gaze/render/obj_loader.hpp"
 
+#include <charconv>
 #include <cstdlib>
 #include <fstream>
 #include <string>
