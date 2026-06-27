@@ -67,6 +67,17 @@
         "CMAKE_CXX_COMPILER": "clang++",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "OFF"
       }
+    },
+    {
+      "name": "ci-windows",
+      "displayName": "CI (Windows / MSVC)",
+      "description": "Release build for Windows CI runners. Uses MSVC via Ninja; compiler is not pinned so CMake picks cl.exe from the MSVC dev-cmd environment. freeglut is supplied by vcpkg.",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/ci-windows",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "OFF"
+      }
     }
   ],
   "buildPresets": [
@@ -94,6 +105,10 @@
     {
       "name": "ci",
       "configurePreset": "ci"
+    },
+    {
+      "name": "ci-windows",
+      "configurePreset": "ci-windows"
     }
   ],
   "testPresets": [
@@ -129,6 +144,13 @@
     {
       "name": "ci",
       "configurePreset": "ci",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "ci-windows",
+      "configurePreset": "ci-windows",
       "output": {
         "outputOnFailure": true
       }

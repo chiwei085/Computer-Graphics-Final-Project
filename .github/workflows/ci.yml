@@ -13,7 +13,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, macos-14]
+        include:
+          - os: ubuntu-24.04
+            preset: ci
+          - os: macos-14
+            preset: ci
+          - os: windows-latest
+            preset: ci-windows
 
     steps:
       - uses: actions/checkout@v4
@@ -29,29 +35,56 @@ jobs:
             libgl1-mesa-dev libglu1-mesa-dev
 
       # ── macOS ──────────────────────────────────────────────────────────────
-      # freeglut from Homebrew provides <GL/freeglut.h>; the system GLUT.framework
-      # only has <GLUT/glut.h> and cannot satisfy the project's includes.
+      # Homebrew freeglut provides <GL/freeglut.h>; the system GLUT.framework
+      # only has <GLUT/glut.h>.  We pass GLUT_INCLUDE_DIR and GLUT_glut_LIBRARY
+      # explicitly so CMake's FindGLUT module doesn't fall back to the framework.
       - name: Install dependencies (macOS)
         if: runner.os == 'macOS'
         run: |
           brew install ninja freeglut
-          echo "FREEGLUT_PREFIX=$(brew --prefix freeglut)" >> "$GITHUB_ENV"
+          FREEGLUT_PREFIX="$(brew --prefix freeglut)"
+          echo "FREEGLUT_INCLUDE=$FREEGLUT_PREFIX/include" >> "$GITHUB_ENV"
+          # Accept either libglut.dylib or libfreeglut.dylib (Homebrew may ship either)
+          FREEGLUT_LIB="$(find "$FREEGLUT_PREFIX/lib" -name 'libglut*.dylib' | sort | head -1)"
+          echo "FREEGLUT_LIB=$FREEGLUT_LIB" >> "$GITHUB_ENV"
+
+      # ── Windows ────────────────────────────────────────────────────────────
+      # ilammy/msvc-dev-cmd puts cl.exe, link.exe, etc. into PATH so that
+      # Ninja can find the MSVC toolchain without a Visual Studio generator.
+      - name: Setup MSVC environment (Windows)
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      # vcpkg is pre-installed on GitHub Windows runners at VCPKG_INSTALLATION_ROOT.
+      # The freeglut port installs <GL/freeglut.h> and the matching .lib/.dll.
+      - name: Install dependencies (Windows)
+        if: runner.os == 'Windows'
+        run: vcpkg install freeglut:x64-windows
 
       # ── Configure ──────────────────────────────────────────────────────────
       - name: Configure (Linux)
         if: runner.os == 'Linux'
-        run: cmake --preset ci
+        run: cmake --preset ${{ matrix.preset }}
 
       - name: Configure (macOS)
         if: runner.os == 'macOS'
-        run: cmake --preset ci -DCMAKE_PREFIX_PATH="$FREEGLUT_PREFIX"
+        run: |
+          cmake --preset ${{ matrix.preset }} \
+            -DGLUT_INCLUDE_DIR="$FREEGLUT_INCLUDE" \
+            -DGLUT_glut_LIBRARY="$FREEGLUT_LIB"
+
+      - name: Configure (Windows)
+        if: runner.os == 'Windows'
+        run: >
+          cmake --preset ${{ matrix.preset }}
+          -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
 
       # ── Build ──────────────────────────────────────────────────────────────
       - name: Build
-        run: cmake --build --preset ci
+        run: cmake --build --preset ${{ matrix.preset }}
 
       # ── Test ───────────────────────────────────────────────────────────────
       # The test binary links against OpenGL/GLUT but never calls glutInit,
       # so no display is required on headless runners.
       - name: Test
-        run: ctest --preset ci --output-on-failure
+        run: ctest --preset ${{ matrix.preset }} --output-on-failure

@@ -97,10 +97,12 @@ cmake --build --preset release-vs
 The binary is written to `build/release/future_gaze` (Ninja presets) or
 `build/release-vs/Release/future_gaze.exe` (Visual Studio preset).
 
-> **macOS**: pass `-DCMAKE_PREFIX_PATH=$(brew --prefix freeglut)` to
-> configure so CMake can locate the Homebrew freeglut headers and library:
+> **macOS**: CMake's `FindGLUT` prefers the system `GLUT.framework` over Homebrew freeglut even
+> when `CMAKE_PREFIX_PATH` is set. Override the paths explicitly instead:
 > ```bash
-> cmake --preset release -DCMAKE_PREFIX_PATH="$(brew --prefix freeglut)"
+> cmake --preset release \
+>   -DGLUT_INCLUDE_DIR="$(brew --prefix freeglut)/include" \
+>   -DGLUT_glut_LIBRARY="$(brew --prefix freeglut)/lib/libglut.dylib"
 > cmake --build --preset release
 > ```
 

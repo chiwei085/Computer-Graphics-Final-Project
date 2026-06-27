@@ -88,7 +88,7 @@ runtime 僅依賴 OpenGL、FreeGLUT 與 `stb_image.h` (已 vendor 入 repo)。
   ```
 ]
 
-Visual Studio 使用者可改用 `release-vs` preset、macOS 若 CMake 找不到 Homebrew 的 freeglut，需在 configure 時加上 `-DCMAKE_PREFIX_PATH="$(brew --prefix freeglut)"`。執行後視窗預設為 `1280 × 720`，可自由縮放。若 OBJ 模型不在 repo 中，依 `scripts/README.md` 執行 fetch + convert 腳本重新生成。
+Visual Studio 使用者可改用 `release-vs` preset。macOS 的 `FindGLUT` 會優先選擇系統 `GLUT.framework`，`CMAKE_PREFIX_PATH` 對此無效；需改用 `-DGLUT_INCLUDE_DIR="$(brew --prefix freeglut)/include"` 與 `-DGLUT_glut_LIBRARY="$(brew --prefix freeglut)/lib/libglut.dylib"` 顯式覆寫。執行後視窗預設為 `1280 × 720`，可自由縮放。若 OBJ 模型不在 repo 中，依 `scripts/README.md` 執行 fetch + convert 腳本重新生成。
 
 = User Guide
 
